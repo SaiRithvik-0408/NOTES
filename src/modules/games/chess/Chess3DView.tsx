@@ -65,21 +65,32 @@ const Piece3D: React.FC<Piece3DProps> = ({ type, color, isSelected, themeMode })
     <group ref={groupRef}>
       {/* Universal Pedestal Base */}
       <mesh position={[0, 0.08, 0]} castShadow receiveShadow>
-        <cylinderGeometry args={[0.34, 0.38, 0.16, 24]} />
+        <cylinderGeometry args={[0.34, 0.39, 0.16, 28]} />
         <meshStandardMaterial
           color={primaryColor}
-          roughness={isNeon ? 0.2 : 0.4}
-          metalness={isNeon ? 0.8 : 0.1}
+          roughness={isNeon ? 0.2 : 0.35}
+          metalness={isNeon ? 0.8 : 0.12}
+          emissive={emissiveColor}
+          emissiveIntensity={emissiveIntensity}
+        />
+      </mesh>
+      {/* Pedestal Collar */}
+      <mesh position={[0, 0.17, 0]} castShadow>
+        <cylinderGeometry args={[0.26, 0.34, 0.04, 28]} />
+        <meshStandardMaterial
+          color={primaryColor}
+          roughness={isNeon ? 0.2 : 0.35}
+          metalness={isNeon ? 0.8 : 0.12}
           emissive={emissiveColor}
           emissiveIntensity={emissiveIntensity}
         />
       </mesh>
 
-      {/* Piece Specific Body Geometries */}
+      {/* PAWN */}
       {type === 'p' && (
         <group position={[0, 0.16, 0]}>
-          <mesh position={[0, 0.18, 0]} castShadow>
-            <cylinderGeometry args={[0.18, 0.28, 0.36, 20]} />
+          <mesh position={[0, 0.16, 0]} castShadow>
+            <cylinderGeometry args={[0.15, 0.26, 0.32, 22]} />
             <meshStandardMaterial
               color={primaryColor}
               roughness={0.3}
@@ -87,7 +98,182 @@ const Piece3D: React.FC<Piece3DProps> = ({ type, color, isSelected, themeMode })
               emissiveIntensity={emissiveIntensity}
             />
           </mesh>
-          <mesh position={[0, 0.42, 0]} castShadow>
+          {/* Pawn Collar */}
+          <mesh position={[0, 0.33, 0]} castShadow>
+            <cylinderGeometry args={[0.2, 0.16, 0.04, 22]} />
+            <meshStandardMaterial
+              color={primaryColor}
+              roughness={0.3}
+              emissive={emissiveColor}
+              emissiveIntensity={emissiveIntensity}
+            />
+          </mesh>
+          {/* Head Sphere */}
+          <mesh position={[0, 0.44, 0]} castShadow>
+            <sphereGeometry args={[0.17, 22, 22]} />
+            <meshStandardMaterial
+              color={primaryColor}
+              roughness={0.3}
+              emissive={emissiveColor}
+              emissiveIntensity={emissiveIntensity}
+            />
+          </mesh>
+        </group>
+      )}
+
+      {/* ROOK (Castellated Tower with 4 Battlements) */}
+      {type === 'r' && (
+        <group position={[0, 0.16, 0]}>
+          {/* Main Tower Body */}
+          <mesh position={[0, 0.24, 0]} castShadow>
+            <cylinderGeometry args={[0.23, 0.29, 0.48, 22]} />
+            <meshStandardMaterial
+              color={primaryColor}
+              roughness={0.3}
+              emissive={emissiveColor}
+              emissiveIntensity={emissiveIntensity}
+            />
+          </mesh>
+          {/* Turret Platform */}
+          <mesh position={[0, 0.5, 0]} castShadow>
+            <cylinderGeometry args={[0.29, 0.23, 0.1, 24]} />
+            <meshStandardMaterial
+              color={primaryColor}
+              roughness={0.3}
+              emissive={emissiveColor}
+              emissiveIntensity={emissiveIntensity}
+            />
+          </mesh>
+          {/* 4 Crenellated Parapets */}
+          <mesh position={[0.18, 0.58, 0]} castShadow>
+            <boxGeometry args={[0.08, 0.09, 0.16]} />
+            <meshStandardMaterial
+              color={primaryColor}
+              roughness={0.3}
+              emissive={emissiveColor}
+              emissiveIntensity={emissiveIntensity}
+            />
+          </mesh>
+          <mesh position={[-0.18, 0.58, 0]} castShadow>
+            <boxGeometry args={[0.08, 0.09, 0.16]} />
+            <meshStandardMaterial
+              color={primaryColor}
+              roughness={0.3}
+              emissive={emissiveColor}
+              emissiveIntensity={emissiveIntensity}
+            />
+          </mesh>
+          <mesh position={[0, 0.58, 0.18]} castShadow>
+            <boxGeometry args={[0.16, 0.09, 0.08]} />
+            <meshStandardMaterial
+              color={primaryColor}
+              roughness={0.3}
+              emissive={emissiveColor}
+              emissiveIntensity={emissiveIntensity}
+            />
+          </mesh>
+          <mesh position={[0, 0.58, -0.18]} castShadow>
+            <boxGeometry args={[0.16, 0.09, 0.08]} />
+            <meshStandardMaterial
+              color={primaryColor}
+              roughness={0.3}
+              emissive={emissiveColor}
+              emissiveIntensity={emissiveIntensity}
+            />
+          </mesh>
+        </group>
+      )}
+
+      {/* KNIGHT (Sculpted Horse Head with Muzzle & Pointed Ears) */}
+      {type === 'n' && (
+        <group position={[0, 0.16, 0]} rotation={[0, color === 'w' ? 0 : Math.PI, 0]}>
+          {/* Arched Neck */}
+          <mesh position={[0, 0.24, -0.03]} rotation={[-0.18, 0, 0]} castShadow>
+            <cylinderGeometry args={[0.17, 0.26, 0.44, 20]} />
+            <meshStandardMaterial
+              color={primaryColor}
+              roughness={0.3}
+              emissive={emissiveColor}
+              emissiveIntensity={emissiveIntensity}
+            />
+          </mesh>
+          {/* Sculpted Head & Brow */}
+          <mesh position={[0, 0.48, 0.06]} rotation={[0.42, 0, 0]} castShadow>
+            <boxGeometry args={[0.22, 0.28, 0.32]} />
+            <meshStandardMaterial
+              color={primaryColor}
+              roughness={0.3}
+              emissive={emissiveColor}
+              emissiveIntensity={emissiveIntensity}
+            />
+          </mesh>
+          {/* Snout / Muzzle */}
+          <mesh position={[0, 0.38, 0.22]} rotation={[0.7, 0, 0]} castShadow>
+            <boxGeometry args={[0.16, 0.15, 0.22]} />
+            <meshStandardMaterial
+              color={primaryColor}
+              roughness={0.3}
+              emissive={emissiveColor}
+              emissiveIntensity={emissiveIntensity}
+            />
+          </mesh>
+          {/* Mane Crest */}
+          <mesh position={[0, 0.44, -0.14]} rotation={[-0.35, 0, 0]} castShadow>
+            <boxGeometry args={[0.06, 0.32, 0.12]} />
+            <meshStandardMaterial
+              color={primaryColor}
+              roughness={0.3}
+              emissive={emissiveColor}
+              emissiveIntensity={emissiveIntensity}
+            />
+          </mesh>
+          {/* Left Ear */}
+          <mesh position={[0.08, 0.64, -0.03]} rotation={[0.15, 0, 0.15]} castShadow>
+            <coneGeometry args={[0.045, 0.14, 12]} />
+            <meshStandardMaterial
+              color={primaryColor}
+              roughness={0.3}
+              emissive={emissiveColor}
+              emissiveIntensity={emissiveIntensity}
+            />
+          </mesh>
+          {/* Right Ear */}
+          <mesh position={[-0.08, 0.64, -0.03]} rotation={[0.15, 0, -0.15]} castShadow>
+            <coneGeometry args={[0.045, 0.14, 12]} />
+            <meshStandardMaterial
+              color={primaryColor}
+              roughness={0.3}
+              emissive={emissiveColor}
+              emissiveIntensity={emissiveIntensity}
+            />
+          </mesh>
+        </group>
+      )}
+
+      {/* BISHOP (Pointed Mitre with Slit & Finial) */}
+      {type === 'b' && (
+        <group position={[0, 0.16, 0]}>
+          <mesh position={[0, 0.26, 0]} castShadow>
+            <cylinderGeometry args={[0.18, 0.27, 0.52, 22]} />
+            <meshStandardMaterial
+              color={primaryColor}
+              roughness={0.3}
+              emissive={emissiveColor}
+              emissiveIntensity={emissiveIntensity}
+            />
+          </mesh>
+          {/* Collar Rim */}
+          <mesh position={[0, 0.52, 0]} castShadow>
+            <cylinderGeometry args={[0.22, 0.18, 0.04, 22]} />
+            <meshStandardMaterial
+              color={primaryColor}
+              roughness={0.3}
+              emissive={emissiveColor}
+              emissiveIntensity={emissiveIntensity}
+            />
+          </mesh>
+          {/* Mitre Teardrop Dome */}
+          <mesh position={[0, 0.68, 0]} castShadow>
             <sphereGeometry args={[0.18, 20, 20]} />
             <meshStandardMaterial
               color={primaryColor}
@@ -96,13 +282,33 @@ const Piece3D: React.FC<Piece3DProps> = ({ type, color, isSelected, themeMode })
               emissiveIntensity={emissiveIntensity}
             />
           </mesh>
+          {/* Pointed Mitre Peak */}
+          <mesh position={[0, 0.8, 0]} castShadow>
+            <coneGeometry args={[0.12, 0.2, 18]} />
+            <meshStandardMaterial
+              color={primaryColor}
+              roughness={0.3}
+              emissive={emissiveColor}
+              emissiveIntensity={emissiveIntensity}
+            />
+          </mesh>
+          {/* Finial Ball */}
+          <mesh position={[0, 0.92, 0]} castShadow>
+            <sphereGeometry args={[0.05, 14, 14]} />
+            <meshStandardMaterial
+              color={isNeon ? '#FBBF24' : '#CA8A04'}
+              emissive={isNeon ? '#FBBF24' : '#CA8A04'}
+              emissiveIntensity={0.6}
+            />
+          </mesh>
         </group>
       )}
 
-      {type === 'r' && (
+      {/* QUEEN (Flared Coronet Crown with Golden Top Orb) */}
+      {type === 'q' && (
         <group position={[0, 0.16, 0]}>
-          <mesh position={[0, 0.25, 0]} castShadow>
-            <cylinderGeometry args={[0.26, 0.3, 0.5, 20]} />
+          <mesh position={[0, 0.32, 0]} castShadow>
+            <cylinderGeometry args={[0.21, 0.29, 0.64, 24]} />
             <meshStandardMaterial
               color={primaryColor}
               roughness={0.3}
@@ -110,47 +316,59 @@ const Piece3D: React.FC<Piece3DProps> = ({ type, color, isSelected, themeMode })
               emissiveIntensity={emissiveIntensity}
             />
           </mesh>
-          {/* Battlement rim */}
-          <mesh position={[0, 0.54, 0]} castShadow>
-            <cylinderGeometry args={[0.28, 0.24, 0.14, 20]} />
+          {/* Mid-waist Ring */}
+          <mesh position={[0, 0.58, 0]} castShadow>
+            <torusGeometry args={[0.21, 0.03, 12, 24]} />
             <meshStandardMaterial
               color={primaryColor}
               roughness={0.3}
               emissive={emissiveColor}
               emissiveIntensity={emissiveIntensity}
+            />
+          </mesh>
+          {/* Flared Coronet Basin */}
+          <mesh position={[0, 0.74, 0]} castShadow>
+            <cylinderGeometry args={[0.29, 0.19, 0.22, 24]} />
+            <meshStandardMaterial
+              color={primaryColor}
+              roughness={0.3}
+              emissive={emissiveColor}
+              emissiveIntensity={emissiveIntensity}
+            />
+          </mesh>
+          {/* Coronet Spheres */}
+          {Array.from({ length: 6 }).map((_, i) => {
+            const angle = (i * Math.PI) / 3;
+            const x = Math.cos(angle) * 0.25;
+            const z = Math.sin(angle) * 0.25;
+            return (
+              <mesh key={i} position={[x, 0.86, z]} castShadow>
+                <sphereGeometry args={[0.04, 12, 12]} />
+                <meshStandardMaterial
+                  color={isNeon ? '#FBBF24' : '#CA8A04'}
+                  emissive={isNeon ? '#FBBF24' : '#CA8A04'}
+                  emissiveIntensity={0.5}
+                />
+              </mesh>
+            );
+          })}
+          {/* Central Royal Orb */}
+          <mesh position={[0, 0.88, 0]} castShadow>
+            <sphereGeometry args={[0.08, 18, 18]} />
+            <meshStandardMaterial
+              color={isNeon ? '#FBBF24' : '#EAB308'}
+              emissive={isNeon ? '#FBBF24' : '#CA8A04'}
+              emissiveIntensity={0.7}
             />
           </mesh>
         </group>
       )}
 
-      {type === 'n' && (
-        <group position={[0, 0.16, 0]} rotation={[0, color === 'w' ? 0 : Math.PI, 0]}>
-          <mesh position={[0, 0.22, 0]} castShadow>
-            <cylinderGeometry args={[0.22, 0.28, 0.44, 20]} />
-            <meshStandardMaterial
-              color={primaryColor}
-              roughness={0.3}
-              emissive={emissiveColor}
-              emissiveIntensity={emissiveIntensity}
-            />
-          </mesh>
-          {/* Angled Horse Head */}
-          <mesh position={[0, 0.48, 0.08]} rotation={[0.4, 0, 0]} castShadow>
-            <boxGeometry args={[0.22, 0.32, 0.34]} />
-            <meshStandardMaterial
-              color={primaryColor}
-              roughness={0.3}
-              emissive={emissiveColor}
-              emissiveIntensity={emissiveIntensity}
-            />
-          </mesh>
-        </group>
-      )}
-
-      {type === 'b' && (
+      {/* KING (Imperial Tiered Crown with Golden Cross) */}
+      {type === 'k' && (
         <group position={[0, 0.16, 0]}>
-          <mesh position={[0, 0.28, 0]} castShadow>
-            <cylinderGeometry args={[0.2, 0.28, 0.56, 20]} />
+          <mesh position={[0, 0.36, 0]} castShadow>
+            <cylinderGeometry args={[0.23, 0.31, 0.72, 24]} />
             <meshStandardMaterial
               color={primaryColor}
               roughness={0.3}
@@ -158,8 +376,28 @@ const Piece3D: React.FC<Piece3DProps> = ({ type, color, isSelected, themeMode })
               emissiveIntensity={emissiveIntensity}
             />
           </mesh>
-          {/* Mitre top */}
-          <mesh position={[0, 0.62, 0]} castShadow>
+          {/* Mid-waist Ring */}
+          <mesh position={[0, 0.65, 0]} castShadow>
+            <torusGeometry args={[0.24, 0.035, 12, 24]} />
+            <meshStandardMaterial
+              color={primaryColor}
+              roughness={0.3}
+              emissive={emissiveColor}
+              emissiveIntensity={emissiveIntensity}
+            />
+          </mesh>
+          {/* Crown Head Cap */}
+          <mesh position={[0, 0.8, 0]} castShadow>
+            <cylinderGeometry args={[0.28, 0.22, 0.18, 24]} />
+            <meshStandardMaterial
+              color={primaryColor}
+              roughness={0.3}
+              emissive={emissiveColor}
+              emissiveIntensity={emissiveIntensity}
+            />
+          </mesh>
+          {/* Crown Dome */}
+          <mesh position={[0, 0.9, 0]} castShadow>
             <sphereGeometry args={[0.18, 18, 18]} />
             <meshStandardMaterial
               color={primaryColor}
@@ -168,85 +406,22 @@ const Piece3D: React.FC<Piece3DProps> = ({ type, color, isSelected, themeMode })
               emissiveIntensity={emissiveIntensity}
             />
           </mesh>
-          <mesh position={[0, 0.8, 0]} castShadow>
-            <sphereGeometry args={[0.06, 12, 12]} />
-            <meshStandardMaterial
-              color={primaryColor}
-              roughness={0.3}
-              emissive={emissiveColor}
-              emissiveIntensity={emissiveIntensity}
-            />
-          </mesh>
-        </group>
-      )}
-
-      {type === 'q' && (
-        <group position={[0, 0.16, 0]}>
-          <mesh position={[0, 0.32, 0]} castShadow>
-            <cylinderGeometry args={[0.22, 0.3, 0.64, 20]} />
-            <meshStandardMaterial
-              color={primaryColor}
-              roughness={0.3}
-              emissive={emissiveColor}
-              emissiveIntensity={emissiveIntensity}
-            />
-          </mesh>
-          {/* Flared crown */}
-          <mesh position={[0, 0.72, 0]} castShadow>
-            <cylinderGeometry args={[0.28, 0.18, 0.18, 20]} />
-            <meshStandardMaterial
-              color={primaryColor}
-              roughness={0.3}
-              emissive={emissiveColor}
-              emissiveIntensity={emissiveIntensity}
-            />
-          </mesh>
-          <mesh position={[0, 0.85, 0]} castShadow>
-            <sphereGeometry args={[0.08, 16, 16]} />
+          {/* Royal Cross - Vertical bar */}
+          <mesh position={[0, 1.05, 0]} castShadow>
+            <boxGeometry args={[0.07, 0.22, 0.05]} />
             <meshStandardMaterial
               color={isNeon ? '#FBBF24' : '#EAB308'}
               emissive={isNeon ? '#FBBF24' : '#CA8A04'}
-              emissiveIntensity={0.6}
+              emissiveIntensity={0.8}
             />
           </mesh>
-        </group>
-      )}
-
-      {type === 'k' && (
-        <group position={[0, 0.16, 0]}>
-          <mesh position={[0, 0.36, 0]} castShadow>
-            <cylinderGeometry args={[0.24, 0.32, 0.72, 20]} />
-            <meshStandardMaterial
-              color={primaryColor}
-              roughness={0.3}
-              emissive={emissiveColor}
-              emissiveIntensity={emissiveIntensity}
-            />
-          </mesh>
-          <mesh position={[0, 0.78, 0]} castShadow>
-            <cylinderGeometry args={[0.28, 0.22, 0.16, 20]} />
-            <meshStandardMaterial
-              color={primaryColor}
-              roughness={0.3}
-              emissive={emissiveColor}
-              emissiveIntensity={emissiveIntensity}
-            />
-          </mesh>
-          {/* Royal Cross */}
-          <mesh position={[0, 0.94, 0]} castShadow>
-            <boxGeometry args={[0.07, 0.18, 0.05]} />
+          {/* Royal Cross - Horizontal bar */}
+          <mesh position={[0, 1.08, 0]} castShadow>
+            <boxGeometry args={[0.2, 0.07, 0.05]} />
             <meshStandardMaterial
               color={isNeon ? '#FBBF24' : '#EAB308'}
               emissive={isNeon ? '#FBBF24' : '#CA8A04'}
-              emissiveIntensity={0.6}
-            />
-          </mesh>
-          <mesh position={[0, 0.96, 0]} castShadow>
-            <boxGeometry args={[0.16, 0.06, 0.05]} />
-            <meshStandardMaterial
-              color={isNeon ? '#FBBF24' : '#EAB308'}
-              emissive={isNeon ? '#FBBF24' : '#CA8A04'}
-              emissiveIntensity={0.6}
+              emissiveIntensity={0.8}
             />
           </mesh>
         </group>
@@ -268,6 +443,7 @@ interface Board3DProps {
   activeHint?: Move | null;
   isCheck: boolean;
   themeMode: UITheme;
+  isFlipped: boolean;
   onSelectSquare: (pos: Position) => void;
 }
 
@@ -280,36 +456,135 @@ const Board3D: React.FC<Board3DProps> = ({
   activeHint,
   isCheck,
   themeMode,
+  isFlipped,
   onSelectSquare,
 }) => {
   const isNeon = themeMode === '3d-neon';
 
-  // Tile palette
-  const lightTileColor = isNeon ? '#0F172A' : '#F1F5F9';
-  const darkTileColor = isNeon ? '#020617' : '#475569';
-  const frameColor = isNeon ? '#090D16' : '#1E293B';
+  // High-contrast tile palette: in Neon mode, distinct indigo vs midnight obsidian with glowing border
+  const lightTileColor = isNeon ? '#1E1B4B' : '#F8FAFC';
+  const darkTileColor = isNeon ? '#090D1A' : '#334155';
+  const frameColor = isNeon ? '#0B0F19' : '#1E293B';
+  const coordColor = isNeon ? '#38BDF8' : '#F8FAFC';
+  const coordGlow = isNeon ? '#0284C7' : '#0F172A';
 
   const [hoveredPos, setHoveredPos] = useState<Position | null>(null);
+
+  // Files & Ranks for 3D frame coordinates
+  const fileLetters = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
+  const rankNumbers = ['8', '7', '6', '5', '4', '3', '2', '1'];
 
   return (
     <group position={[0, 0, 0]}>
       {/* Outer Board Frame */}
-      <mesh position={[0, -0.12, 0]} receiveShadow>
-        <boxGeometry args={[8.8, 0.24, 8.8]} />
+      <mesh position={[0, -0.14, 0]} receiveShadow>
+        <boxGeometry args={[9.6, 0.28, 9.6]} />
         <meshStandardMaterial
           color={frameColor}
-          roughness={isNeon ? 0.3 : 0.5}
-          metalness={isNeon ? 0.7 : 0.1}
+          roughness={isNeon ? 0.25 : 0.45}
+          metalness={isNeon ? 0.75 : 0.15}
         />
       </mesh>
 
-      {/* Frame Border Glow for Neon mode */}
+      {/* Frame Border Accent Trim / Bevel */}
+      <mesh position={[0, -0.01, 0]} receiveShadow>
+        <boxGeometry args={[8.25, 0.05, 8.25]} />
+        <meshStandardMaterial
+          color={isNeon ? '#312E81' : '#0F172A'}
+          roughness={0.4}
+          metalness={isNeon ? 0.8 : 0.2}
+          emissive={isNeon ? '#4338CA' : '#000000'}
+          emissiveIntensity={isNeon ? 0.35 : 0}
+        />
+      </mesh>
+
+      {/* Neon Perimeter Glow Trim */}
       {isNeon && (
-        <mesh position={[0, 0.01, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-          <ringGeometry args={[4.4, 4.45, 4]} />
-          <meshBasicMaterial color="#6366F1" wireframe />
+        <mesh position={[0, 0.015, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+          <ringGeometry args={[4.12, 4.16, 4]} />
+          <meshBasicMaterial color="#06B6D4" wireframe />
         </mesh>
       )}
+
+      {/* 3D Coordinate Keys: Files (a-h) on Bottom Rail (Front) */}
+      {Array.from({ length: 8 }).map((_, c) => {
+        const posX = c - 3.5;
+        const letter = isFlipped ? fileLetters[7 - c] : fileLetters[c];
+        return (
+          <Text
+            key={`coord-f-b-${c}`}
+            position={[posX, 0.02, 4.42]}
+            rotation={[-Math.PI / 2.1, 0, 0]}
+            fontSize={0.34}
+            fontWeight={800}
+            color={coordColor}
+            outlineWidth={0.02}
+            outlineColor={coordGlow}
+          >
+            {letter}
+          </Text>
+        );
+      })}
+
+      {/* 3D Coordinate Keys: Files (a-h) on Top Rail (Back) */}
+      {Array.from({ length: 8 }).map((_, c) => {
+        const posX = c - 3.5;
+        const letter = isFlipped ? fileLetters[7 - c] : fileLetters[c];
+        return (
+          <Text
+            key={`coord-f-t-${c}`}
+            position={[posX, 0.02, -4.42]}
+            rotation={[-Math.PI / 2.1, Math.PI, 0]}
+            fontSize={0.34}
+            fontWeight={800}
+            color={coordColor}
+            outlineWidth={0.02}
+            outlineColor={coordGlow}
+          >
+            {letter}
+          </Text>
+        );
+      })}
+
+      {/* 3D Coordinate Keys: Ranks (1-8) on Left Rail */}
+      {Array.from({ length: 8 }).map((_, r) => {
+        const posZ = r - 3.5;
+        const number = isFlipped ? rankNumbers[7 - r] : rankNumbers[r];
+        return (
+          <Text
+            key={`coord-r-l-${r}`}
+            position={[-4.42, 0.02, posZ]}
+            rotation={[-Math.PI / 2.1, 0, 0]}
+            fontSize={0.34}
+            fontWeight={800}
+            color={coordColor}
+            outlineWidth={0.02}
+            outlineColor={coordGlow}
+          >
+            {number}
+          </Text>
+        );
+      })}
+
+      {/* 3D Coordinate Keys: Ranks (1-8) on Right Rail */}
+      {Array.from({ length: 8 }).map((_, r) => {
+        const posZ = r - 3.5;
+        const number = isFlipped ? rankNumbers[7 - r] : rankNumbers[r];
+        return (
+          <Text
+            key={`coord-r-r-${r}`}
+            position={[4.42, 0.02, posZ]}
+            rotation={[-Math.PI / 2.1, 0, 0]}
+            fontSize={0.34}
+            fontWeight={800}
+            color={coordColor}
+            outlineWidth={0.02}
+            outlineColor={coordGlow}
+          >
+            {number}
+          </Text>
+        );
+      })}
 
       {/* 64 Board Squares & Pieces */}
       {Array.from({ length: 8 }).map((_, r) =>
@@ -519,6 +794,7 @@ export const Chess3DView: React.FC<Chess3DViewProps> = ({
           activeHint={activeHint}
           isCheck={isCheck}
           themeMode={themeMode}
+          isFlipped={isFlipped}
           onSelectSquare={onSelectSquare}
         />
 

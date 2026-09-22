@@ -86,3 +86,93 @@ export async function sendOtpEmail(email: string, code: string, name: string = '
     return { sent: false, error: err.message };
   }
 }
+
+export async function sendChessInviteEmail(
+  email: string,
+  inviterName: string,
+  inviteUrl: string,
+  roomCode: string
+): Promise<SendMailResult> {
+  const user = process.env.SMTP_USER || process.env.GMAIL_USER;
+  const pass = process.env.SMTP_PASS || process.env.GMAIL_APP_PASSWORD;
+  const host = process.env.SMTP_HOST || 'smtp.gmail.com';
+  const port = parseInt(process.env.SMTP_PORT || '465');
+
+  if (!user || !pass) {
+    console.log(`♟️ [Nexus Chess] Simulated email invite to ${email} for room ${roomCode}: ${inviteUrl}`);
+    return {
+      sent: true,
+      reason: 'Simulated email sent in dev mode.',
+    };
+  }
+
+  try {
+    const transporter = nodemailer.createTransport({
+      host,
+      port,
+      secure: port === 465,
+      auth: { user, pass },
+    });
+
+    const info = await transporter.sendMail({
+      from: `"Nexus Chess" <${user}>`,
+      to: email,
+      subject: `♟️ ${inviterName} challenged you to a game of Chess!`,
+      html: `
+        <!DOCTYPE html>
+        <html>
+        <head><meta charset="utf-8" /></head>
+        <body style="margin: 0; padding: 0; background-color: #0B0F19; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
+          <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #0B0F19; padding: 40px 20px;">
+            <tr>
+              <td align="center">
+                <table width="100%" style="max-width: 480px; background-color: #0F1626; border-radius: 20px; border: 1px solid rgba(255,255,255,0.1); padding: 36px 28px; box-shadow: 0 20px 40px rgba(0,0,0,0.5);">
+                  <tr>
+                    <td align="center" style="padding-bottom: 20px;">
+                      <div style="font-size: 40px; line-height: 1; margin-bottom: 8px;">♟️ 👑</div>
+                      <h2 style="color: #FFFFFF; font-size: 22px; font-weight: 800; margin: 0; letter-spacing: -0.02em;">Nexus Chess Challenge</h2>
+                      <p style="color: #94A3B8; font-size: 13px; margin: 6px 0 0 0;">Real-Time 3D & 2D Multiplayer Match</p>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td style="color: #E2E8F0; font-size: 15px; line-height: 1.6; padding-bottom: 15px;">
+                      <strong>${inviterName}</strong> has invited you to join a live chess match!
+                    </td>
+                  </tr>
+                  <tr>
+                    <td align="center" style="padding-bottom: 25px;">
+                      <div style="display: inline-block; background: rgba(99, 102, 241, 0.15); border: 1px solid rgba(99, 102, 241, 0.4); border-radius: 12px; padding: 12px 24px;">
+                        <span style="font-size: 12px; color: #94A3B8; text-transform: uppercase; letter-spacing: 1px; display: block; margin-bottom: 4px;">Room Code</span>
+                        <span style="font-size: 24px; font-weight: 800; letter-spacing: 4px; color: #6366F1; font-family: monospace;">${roomCode}</span>
+                      </div>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td align="center" style="padding-bottom: 25px;">
+                      <a href="${inviteUrl}" style="display: inline-block; background: linear-gradient(135deg, #6366F1, #8B5CF6); color: #FFFFFF; text-decoration: none; font-size: 15px; font-weight: 700; padding: 14px 32px; border-radius: 10px; box-shadow: 0 4px 14px rgba(99, 102, 241, 0.4);">
+                        Join Match or Spectate &rarr;
+                      </a>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td style="color: #64748B; font-size: 13px; line-height: 1.5; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 20px;">
+                      Please note: You will need to log into your Nexus Notes account to play as an active participant. You can also join as a spectator to watch the match live.
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+          </table>
+        </body>
+        </html>
+      `,
+    });
+
+    console.log(`✉️ [Nexus Chess] Invite sent to ${email}: ${info.messageId}`);
+    return { sent: true, messageId: info.messageId };
+  } catch (err: any) {
+    console.error(`❌ [Nexus Chess] Failed to send email invite to ${email}:`, err);
+    return { sent: false, error: err.message };
+  }
+}
+

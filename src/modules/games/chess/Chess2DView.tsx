@@ -136,18 +136,21 @@ export const Chess2DView: React.FC<Chess2DViewProps> = ({
                 },
               }}
             >
-              {/* Coordinate notations (bottom-right / top-left) */}
+              {/* Coordinate notations (Rank numbers and File letters with high contrast) */}
               {gridCol === 0 && (
                 <Typography
                   variant="caption"
                   sx={{
                     position: 'absolute',
-                    top: 2,
+                    top: 3,
                     left: 4,
-                    fontSize: '0.65rem',
-                    fontWeight: 700,
-                    color: isLight ? '#64748B' : '#E2E8F0',
+                    fontSize: '0.78rem',
+                    fontWeight: 900,
+                    color: isLight ? '#1E293B' : '#F8FAFC',
+                    textShadow: isLight ? '0 1px 2px rgba(255,255,255,0.8)' : '0 1px 3px rgba(0,0,0,0.8)',
                     lineHeight: 1,
+                    pointerEvents: 'none',
+                    zIndex: 4,
                   }}
                 >
                   {displayRanks[gridRow]}
@@ -158,12 +161,15 @@ export const Chess2DView: React.FC<Chess2DViewProps> = ({
                   variant="caption"
                   sx={{
                     position: 'absolute',
-                    bottom: 2,
+                    bottom: 3,
                     right: 4,
-                    fontSize: '0.65rem',
-                    fontWeight: 700,
-                    color: isLight ? '#64748B' : '#E2E8F0',
+                    fontSize: '0.78rem',
+                    fontWeight: 900,
+                    color: isLight ? '#1E293B' : '#F8FAFC',
+                    textShadow: isLight ? '0 1px 2px rgba(255,255,255,0.8)' : '0 1px 3px rgba(0,0,0,0.8)',
                     lineHeight: 1,
+                    pointerEvents: 'none',
+                    zIndex: 4,
                   }}
                 >
                   {displayFiles[gridCol]}

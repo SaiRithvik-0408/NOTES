@@ -50,12 +50,8 @@ export function setupWebSocketServer(server: Server) {
         } else if (data.type === 'mutation_broadcast') {
           broadcastToOthers(ws, data);
         } else if (
-          data.type === 'chess_join' ||
-          data.type === 'chess_peer_joined' ||
-          data.type === 'chess_move' ||
-          data.type === 'chess_reset' ||
-          data.type === 'chess_sync_request' ||
-          data.type === 'chess_sync_state'
+          typeof data.type === 'string' &&
+          data.type.startsWith('chess_')
         ) {
           // Broadcast chess multiplayer event to peers
           broadcastToOthers(ws, data);

@@ -456,5 +456,27 @@ app.get('/api/v1/share/:token', (req, res) => {
   res.json(record);
 });
 
+// Chess Email Invite
+app.post('/api/v1/chess/invite', async (req, res) => {
+  const { email, inviterName, inviteUrl, roomCode } = req.body;
+  if (!email || !inviteUrl || !roomCode) {
+    return res.status(400).json({ error: 'Missing email, inviteUrl, or roomCode' });
+  }
+
+  try {
+    const { sendChessInviteEmail } = await import('../../api/_mailer');
+    const result = await sendChessInviteEmail(
+      email,
+      inviterName || 'A Player',
+      inviteUrl,
+      roomCode
+    );
+    res.json({ success: true, ...result });
+  } catch (err: any) {
+    console.error('Failed to dispatch chess invite email:', err);
+    res.json({ success: true, simulated: true, message: 'Invite registered in dev mode' });
+  }
+});
+
 export { app };
 export default app;

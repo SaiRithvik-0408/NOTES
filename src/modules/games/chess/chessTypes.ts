@@ -50,18 +50,87 @@ export type GameMode = 'ai' | 'local' | 'online';
 export type AiDifficulty = 'easy' | 'medium' | 'hard';
 export type UITheme = '3d-wood' | '2d-classic' | '3d-neon';
 
+export type ChessPlayerRole = 'w' | 'b' | 'spectator';
+
+export interface ChessParticipant {
+  id: string;
+  name: string;
+  email?: string;
+  role: ChessPlayerRole;
+  joinedAt: number;
+}
+
+export interface ChessRoomPresence {
+  whitePlayer: ChessParticipant | null;
+  blackPlayer: ChessParticipant | null;
+  spectators: ChessParticipant[];
+}
+
 export interface ChessMultiplayerRoom {
   roomId: string;
-  myColor: PieceColor;
+  myRole: ChessPlayerRole;
   isHost: boolean;
-  peerConnected: boolean;
+  presence: ChessRoomPresence;
 }
 
 export type ChessSocketMessage =
-  | { type: 'chess_join'; roomId: string; color: PieceColor; playerId: string }
-  | { type: 'chess_peer_joined'; roomId: string; color: PieceColor; playerId: string }
-  | { type: 'chess_move'; roomId: string; move: Move; turn: PieceColor; playerId: string }
-  | { type: 'chess_reset'; roomId: string; playerId: string }
-  | { type: 'chess_sync_request'; roomId: string; playerId: string }
-  | { type: 'chess_sync_state'; roomId: string; gameState: any; playerId: string };
+  | {
+      type: 'chess_join';
+      roomId: string;
+      color: PieceColor | 'spectator';
+      playerId: string;
+      playerName: string;
+      playerEmail?: string;
+    }
+  | {
+      type: 'chess_presence';
+      roomId: string;
+      presence: ChessRoomPresence;
+      playerId: string;
+    }
+  | {
+      type: 'chess_peer_joined';
+      roomId: string;
+      color: PieceColor | 'spectator';
+      playerId: string;
+      playerName: string;
+      playerEmail?: string;
+    }
+  | {
+      type: 'chess_move';
+      roomId: string;
+      move: Move;
+      turn: PieceColor;
+      playerId: string;
+    }
+  | {
+      type: 'chess_reset';
+      roomId: string;
+      playerId: string;
+    }
+  | {
+      type: 'chess_sync_request';
+      roomId: string;
+      playerId: string;
+    }
+  | {
+      type: 'chess_sync_state';
+      roomId: string;
+      gameState: any;
+      playerId: string;
+    }
+  | {
+      type: 'chess_request_seat';
+      roomId: string;
+      playerId: string;
+      playerName: string;
+      playerEmail?: string;
+      requestedRole?: 'w' | 'b' | 'any';
+    }
+  | {
+      type: 'chess_seat_approved';
+      roomId: string;
+      playerId: string;
+      assignedRole: PieceColor;
+    };
 

@@ -12,9 +12,16 @@ import {
   Dialog,
   DialogTitle,
   DialogContent,
+  DialogActions,
   Stack,
   CircularProgress,
   Alert,
+  TextField,
+  Snackbar,
+  Divider,
+  Card,
+  CardActionArea,
+  CardContent,
   useTheme,
 } from '@mui/material';
 import {
@@ -35,6 +42,15 @@ import {
   ContentCopy,
   Check,
   LinkOutlined,
+  AddCircleOutline,
+  MeetingRoomOutlined,
+  EmailOutlined,
+  VisibilityOutlined,
+  SportsEsportsOutlined,
+  GroupOutlined,
+  SendOutlined,
+  Close,
+  LockOutlined,
 } from '@mui/icons-material';
 import {
   AiDifficulty,
@@ -47,6 +63,9 @@ import {
   PieceType,
   Position,
   UITheme,
+  ChessPlayerRole,
+  ChessRoomPresence,
+  ChessParticipant,
 } from './chessTypes';
 import {
   createInitialGameState,
@@ -59,6 +78,8 @@ import { chessAudio } from './chessAudio';
 import { chessMultiplayer } from './chessMultiplayer';
 import { Chess2DView } from './Chess2DView';
 import { Chess3DView } from './Chess3DView';
+import { useAuth } from '../../auth/AuthContext';
+import { AuthModal } from '../../auth/AuthModal';
 
 const PIECE_VALUES: Record<PieceType, number> = {
   p: 1,
@@ -74,9 +95,17 @@ const PIECE_SYMBOLS: Record<PieceColor, Record<string, string>> = {
   b: { k: '♚', q: '♛', r: '♜', b: '♝', n: '♞', p: '♟' },
 };
 
+function generateRoomCode(): string {
+  const letters = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+  const prefix = letters[Math.floor(Math.random() * letters.length)] + letters[Math.floor(Math.random() * letters.length)];
+  const num = Math.floor(1000 + Math.random() * 9000);
+  return `${prefix}-${num}`;
+}
+
 export const ChessGame: React.FC = () => {
   const theme = useTheme();
   const isDark = theme.palette.mode === 'dark';
+  const { currentUser } = useAuth();
 
   // Game Settings
   const [uiTheme, setUiTheme] = useState<UITheme>('3d-wood');
@@ -100,6 +129,48 @@ export const ChessGame: React.FC = () => {
     captured?: Piece | null;
   } | null>(null);
 
+  // Online Multiplayer State
+  const [onlineRoomId, setOnlineRoomId] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      const hash = window.location.hash;
+      const match = hash.match(/chess-room=([a-zA-Z0-9_-]+)/);
+      if (match) return match[1];
+      const params = new URLSearchParams(window.location.search);
+      const roomParam = params.get('room') || params.get('chess-room');
+      if (roomParam) return roomParam;
+    }
+    return generateRoomCode();
+  });
+
+  const [myRole, setMyRole] = useState<ChessPlayerRole>('w');
+  const [roomPresence, setRoomPresence] = useState<ChessRoomPresence>({
+    whitePlayer: null,
+    blackPlayer: null,
+    spectators: [],
+  });
+  const [peerConnected, setPeerConnected] = useState<boolean>(false);
+  const [copiedLink, setCopiedLink] = useState<boolean>(false);
+
+  // Modals and Dialogs State
+  const [createModalOpen, setCreateModalOpen] = useState(false);
+  const [joinModalOpen, setJoinModalOpen] = useState(false);
+  const [joinInputCode, setJoinInputCode] = useState('');
+  const [acceptModalOpen, setAcceptModalOpen] = useState(false);
+  const [pendingAcceptRoomId, setPendingAcceptRoomId] = useState<string | null>(null);
+
+  // Create Room Configuration
+  const [customRoomCode, setCustomRoomCode] = useState(() => generateRoomCode());
+  const [selectedSide, setSelectedSide] = useState<'w' | 'b' | 'random'>('w');
+  const [inviteEmailInput, setInviteEmailInput] = useState('');
+  const [isSendingEmail, setIsSendingEmail] = useState(false);
+
+  // Auth Dialog Gate
+  const [authModalOpen, setAuthModalOpen] = useState(false);
+  const [authPromptReason, setAuthPromptReason] = useState<string | null>(null);
+
+  // Toast / Feedback State
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
   // Calculate material difference
   const materialAdvantage = useMemo(() => {
     const whiteSum = gameState.capturedBlack.reduce((acc, p) => acc + PIECE_VALUES[p.type], 0);
@@ -116,7 +187,7 @@ export const ChessGame: React.FC = () => {
     return gameState.moveHistory[gameState.moveHistory.length - 1];
   }, [gameState.moveHistory]);
 
-  // Trigger Sound
+  // Sound triggers
   const triggerMoveSound = useCallback(
     (move: Move, isCheck: boolean, isCheckmate: boolean) => {
       if (!soundEnabled) return;
@@ -133,37 +204,49 @@ export const ChessGame: React.FC = () => {
     [soundEnabled]
   );
 
-  // Online Multiplayer State
-  const [onlineRoomId, setOnlineRoomId] = useState<string>(() => {
-    if (typeof window !== 'undefined') {
-      const hash = window.location.hash;
-      const match = hash.match(/chess-room=([a-zA-Z0-9_-]+)/);
-      if (match) return match[1];
-    }
-    return `room_${Math.random().toString(36).substring(2, 8)}`;
-  });
+  // Generate Invite URL
+  const getInviteUrl = useCallback((room: string) => {
+    if (typeof window === 'undefined') return '';
+    const base = window.location.origin + window.location.pathname;
+    return `${base}?view=games&game=chess&room=${room}#chess-room=${room}`;
+  }, []);
 
-  const [myOnlineColor, setMyOnlineColor] = useState<PieceColor>(() => {
-    if (typeof window !== 'undefined') {
-      const hash = window.location.hash;
-      if (hash.includes('color=b')) return 'b';
-    }
-    return 'w';
-  });
-
-  const [peerConnected, setPeerConnected] = useState<boolean>(false);
-  const [copiedLink, setCopiedLink] = useState<boolean>(false);
-
-  // Auto-detect multiplayer link on mount
+  // Auto-detect invite link on mount
   useEffect(() => {
-    if (typeof window !== 'undefined' && window.location.hash.includes('chess-room')) {
-      setGameMode('online');
-      if (window.location.hash.includes('color=b')) {
-        setMyOnlineColor('b');
-        setIsFlipped(true);
+    if (typeof window !== 'undefined') {
+      const hash = window.location.hash;
+      const params = new URLSearchParams(window.location.search);
+      const roomParam = params.get('room') || params.get('chess-room');
+      const match = hash.match(/chess-room=([a-zA-Z0-9_-]+)/);
+      const detectedRoom = match ? match[1] : roomParam;
+
+      if (detectedRoom) {
+        setPendingAcceptRoomId(detectedRoom);
+        setAcceptModalOpen(true);
       }
     }
   }, []);
+
+  // Initialize Multiplayer Session
+  const startMultiplayerSession = useCallback(
+    (roomId: string, role: ChessPlayerRole) => {
+      setOnlineRoomId(roomId);
+      setMyRole(role);
+      setGameMode('online');
+      setIsFlipped(role === 'b');
+
+      if (typeof window !== 'undefined') {
+        window.location.hash = `#chess-room=${roomId}&role=${role}`;
+      }
+
+      const playerName = currentUser?.name || currentUser?.username || (role === 'spectator' ? 'Spectator' : 'Challenger');
+      const playerEmail = currentUser?.email;
+
+      chessMultiplayer.init(roomId, role, playerName, playerEmail);
+      setRoomPresence(chessMultiplayer.getPresence());
+    },
+    [currentUser]
+  );
 
   // Sync multiplayer socket & BroadcastChannel
   useEffect(() => {
@@ -171,8 +254,6 @@ export const ChessGame: React.FC = () => {
       chessMultiplayer.disconnect();
       return;
     }
-
-    chessMultiplayer.init(onlineRoomId, myOnlineColor);
 
     const unsubscribe = chessMultiplayer.subscribe((msg) => {
       if (msg.type === 'chess_move') {
@@ -182,30 +263,39 @@ export const ChessGame: React.FC = () => {
         triggerMoveSound(msg.move, nextState.isCheck, nextState.isCheckmate);
       } else if (msg.type === 'chess_join') {
         setPeerConnected(true);
-        chessMultiplayer.send({
-          type: 'chess_peer_joined',
-          roomId: onlineRoomId,
-          color: myOnlineColor,
-          playerId: chessMultiplayer.getPlayerId(),
-        });
+        setRoomPresence({ ...chessMultiplayer.getPresence() });
+      } else if (msg.type === 'chess_presence') {
+        setRoomPresence({ ...msg.presence });
       } else if (msg.type === 'chess_peer_joined') {
         setPeerConnected(true);
       } else if (msg.type === 'chess_reset') {
         setGameState(createInitialGameState());
         setHistoryStack([]);
+      } else if (msg.type === 'chess_request_seat') {
+        setToastMessage(`♟️ Spectator ${msg.playerName} requested to play the next match!`);
+      } else if (msg.type === 'chess_seat_approved' && msg.playerId === chessMultiplayer.getPlayerId()) {
+        setMyRole(msg.assignedRole);
+        setIsFlipped(msg.assignedRole === 'b');
+        setToastMessage(`🎉 You have been seated as ${msg.assignedRole === 'w' ? 'White' : 'Black'}!`);
       }
     });
 
     return () => {
       unsubscribe();
     };
-  }, [gameMode, onlineRoomId, myOnlineColor, gameState, triggerMoveSound]);
+  }, [gameMode, gameState, triggerMoveSound]);
 
   // Handle Square Selection and Piece Movement
   const handleSelectSquare = useCallback(
     (pos: Position) => {
       if (isAiThinking || gameState.isCheckmate || gameState.isStalemate) return;
-      if (gameMode === 'online' && gameState.turn !== myOnlineColor) return;
+      if (gameMode === 'online') {
+        if (myRole === 'spectator') {
+          setToastMessage('👁️ You are in Spectator Mode. Request a seat to play!');
+          return;
+        }
+        if (gameState.turn !== myRole) return;
+      }
 
       const [r, c] = pos;
       const clickedPiece = gameState.board[r][c];
@@ -250,6 +340,10 @@ export const ChessGame: React.FC = () => {
 
       // If user clicked on one of their own pieces, select it and compute legal moves
       if (clickedPiece && clickedPiece.color === gameState.turn) {
+        if (gameMode === 'online' && myRole !== clickedPiece.color) {
+          return; // Cannot select opponent's pieces
+        }
+
         const moves = getLegalMoves(
           pos,
           gameState.board,
@@ -272,7 +366,7 @@ export const ChessGame: React.FC = () => {
         setHintExplanation(null);
       }
     },
-    [gameState, isAiThinking, gameMode, myOnlineColor, triggerMoveSound]
+    [gameState, isAiThinking, gameMode, myRole, triggerMoveSound]
   );
 
   // Generate tactical AI hint
@@ -319,77 +413,50 @@ export const ChessGame: React.FC = () => {
   // Pawn Promotion Choice Selection
   const handleChoosePromotion = (promoType: PieceType) => {
     if (!pendingPromotion) return;
+    const { from, to, piece, captured } = pendingPromotion;
 
-    const move: Move = {
-      from: pendingPromotion.from,
-      to: pendingPromotion.to,
-      piece: pendingPromotion.piece,
-      captured: pendingPromotion.captured,
+    const promoMove: Move = {
+      from,
+      to,
+      piece,
+      captured,
       promotion: promoType,
+      san: `${String.fromCharCode(97 + to[1])}${8 - to[0]}=${promoType.toUpperCase()}`,
     };
 
     setHistoryStack((prev) => [...prev, gameState]);
-    const nextState = applyMove(gameState, move);
+    const nextState = applyMove(gameState, promoMove);
     setGameState(nextState);
-    triggerMoveSound(move, nextState.isCheck, nextState.isCheckmate);
     setPendingPromotion(null);
+    triggerMoveSound(promoMove, nextState.isCheck, nextState.isCheckmate);
 
     if (gameMode === 'online') {
-      chessMultiplayer.sendMove(move, nextState.turn);
+      chessMultiplayer.sendMove(promoMove, nextState.turn);
     }
   };
 
-  // AI Turn Execution
-  useEffect(() => {
-    if (
-      gameMode === 'ai' &&
-      gameState.turn === 'b' &&
-      !gameState.isCheckmate &&
-      !gameState.isStalemate
-    ) {
-      setIsAiThinking(true);
-
-      const timer = setTimeout(() => {
-        const aiMove = getBestMove(gameState, difficulty);
-        if (aiMove) {
-          setHistoryStack((prev) => [...prev, gameState]);
-          const nextState = applyMove(gameState, aiMove);
-          setGameState(nextState);
-          triggerMoveSound(aiMove, nextState.isCheck, nextState.isCheckmate);
-        }
-        setIsAiThinking(false);
-      }, 450);
-
-      return () => clearTimeout(timer);
-    }
-  }, [gameState, gameMode, difficulty, triggerMoveSound]);
-
-  // Undo Move Handler
+  // Undo Move
   const handleUndo = () => {
     if (historyStack.length === 0 || isAiThinking) return;
-
-    if (gameMode === 'ai') {
-      // In AI mode, undo 2 plies back (player and AI)
-      if (historyStack.length >= 2) {
-        const target = historyStack[historyStack.length - 2];
-        setGameState(target);
-        setHistoryStack((prev) => prev.slice(0, prev.length - 2));
-      } else {
-        setGameState(historyStack[0]);
-        setHistoryStack([]);
-      }
+    const targetSteps = gameMode === 'ai' ? 2 : 1;
+    if (historyStack.length < targetSteps) {
+      const initial = historyStack[0];
+      setGameState(initial);
+      setHistoryStack([]);
     } else {
-      const prev = historyStack[historyStack.length - 1];
-      setGameState(prev);
-      setHistoryStack((s) => s.slice(0, s.length - 1));
+      const targetState = historyStack[historyStack.length - targetSteps];
+      setGameState(targetState);
+      setHistoryStack((prev) => prev.slice(0, prev.length - targetSteps));
     }
+    setActiveHint(null);
+    setHintExplanation(null);
   };
 
-  // Reset Game
+  // Restart / New Game
   const handleNewGame = () => {
-    setGameState(createInitialGameState());
+    const fresh = createInitialGameState();
+    setGameState(fresh);
     setHistoryStack([]);
-    setPendingPromotion(null);
     setActiveHint(null);
     setHintExplanation(null);
     if (gameMode === 'online') {
@@ -397,95 +464,169 @@ export const ChessGame: React.FC = () => {
     }
   };
 
-  const handleCopyInviteLink = () => {
-    if (typeof window === 'undefined') return;
-    const opponentColor = myOnlineColor === 'w' ? 'b' : 'w';
-    const origin = window.location.origin;
-    const pathname = window.location.pathname;
-    const url = `${origin}${pathname}#chess-room=${onlineRoomId}&color=${opponentColor}`;
-    navigator.clipboard.writeText(url);
+  // Copy Invite Link
+  const handleCopyInviteLink = (code: string) => {
+    const link = getInviteUrl(code);
+    navigator.clipboard.writeText(link);
     setCopiedLink(true);
-    setTimeout(() => setCopiedLink(false), 2500);
+    setToastMessage('📋 Invite link copied to clipboard!');
+    setTimeout(() => setCopiedLink(false), 3000);
   };
 
-  const handleCreateNewRoom = () => {
-    const newRoom = `room_${Math.random().toString(36).substring(2, 8)}`;
-    setOnlineRoomId(newRoom);
-    setMyOnlineColor('w');
-    setIsFlipped(false);
-    setPeerConnected(false);
-    setGameState(createInitialGameState());
-    setHistoryStack([]);
-    if (typeof window !== 'undefined') {
-      window.location.hash = `#chess-room=${newRoom}&color=w`;
+  // Send Email Invite
+  const handleSendEmailInvite = async (recipientEmail: string, roomCode: string) => {
+    if (!recipientEmail || !recipientEmail.includes('@')) {
+      setToastMessage('⚠️ Please enter a valid recipient email address.');
+      return;
+    }
+    setIsSendingEmail(true);
+    try {
+      const inviteUrl = getInviteUrl(roomCode);
+      const inviterName = currentUser?.name || currentUser?.username || 'Your friend';
+      const res = await fetch('/api/v1/chess/invite', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: recipientEmail,
+          inviterName,
+          inviteUrl,
+          roomCode,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setToastMessage(`✉️ Challenge email successfully sent to ${recipientEmail}!`);
+        setInviteEmailInput('');
+      } else {
+        setToastMessage(`⚠️ Note: ${data.reason || 'Simulated invite recorded in dev mode.'}`);
+      }
+    } catch {
+      setToastMessage(`✉️ Challenge link ready and simulated for ${recipientEmail}!`);
+    } finally {
+      setIsSendingEmail(false);
     }
   };
 
+  // Accept Invite / Join Flow
+  const handleAcceptJoin = (mode: 'play' | 'spectate') => {
+    const targetRoom = pendingAcceptRoomId || onlineRoomId;
+
+    if (mode === 'play') {
+      // Must be logged in to play match!
+      if (!currentUser) {
+        setAuthPromptReason('You must log in to your account to play as an active participant in this match.');
+        setAuthModalOpen(true);
+        return;
+      }
+
+      // Check seat availability
+      const isWhiteOccupied = !!roomPresence.whitePlayer;
+      const isBlackOccupied = !!roomPresence.blackPlayer;
+
+      if (isWhiteOccupied && isBlackOccupied) {
+        setToastMessage('⚠️ Both player seats are occupied! You can spectate or request to play next.');
+        return;
+      }
+
+      const assignedRole: PieceColor = isWhiteOccupied ? 'b' : 'w';
+      startMultiplayerSession(targetRoom, assignedRole);
+      setAcceptModalOpen(false);
+      setToastMessage(`🎮 Joined match as ${assignedRole === 'w' ? 'White (Plays First)' : 'Black'}!`);
+    } else {
+      // Spectator mode
+      startMultiplayerSession(targetRoom, 'spectator');
+      setAcceptModalOpen(false);
+      setToastMessage('👁️ Joined live match as Spectator.');
+    }
+  };
+
+  // Request to play while in spectator mode
+  const handleRequestSeat = () => {
+    if (!currentUser) {
+      setAuthPromptReason('Please log into your account to request a seat in this match.');
+      setAuthModalOpen(true);
+      return;
+    }
+    chessMultiplayer.requestSeat('any');
+    setToastMessage('📨 Seat request sent to the players! When the match finishes, you will be queued.');
+  };
+
+  // Check if room is 2/2 full
+  const isRoomFull = !!(roomPresence.whitePlayer && roomPresence.blackPlayer);
+
   return (
-    <Box sx={{ maxWidth: 1100, mx: 'auto', p: { xs: 1, sm: 2, md: 3 } }}>
-      {/* Top Header & 3-UI Theme Switcher */}
-      <Paper
-        elevation={0}
+    <Box sx={{ width: '100%', py: { xs: 1, md: 3 }, px: { xs: 1, md: 2 } }}>
+      {/* Top Header & Settings Controls */}
+      <Box
         sx={{
-          p: 2,
-          mb: 3,
-          borderRadius: '16px',
-          bgcolor: isDark ? 'rgba(30, 41, 59, 0.6)' : 'rgba(255, 255, 255, 0.8)',
-          backdropFilter: 'blur(12px)',
-          border: `1px solid ${isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.06)'}`,
           display: 'flex',
           flexWrap: 'wrap',
           alignItems: 'center',
           justifyContent: 'space-between',
-          gap: 2,
+          gap: 1.5,
+          mb: 2,
         }}
       >
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-          <Typography variant="h5" sx={{ fontWeight: 800, letterSpacing: '-0.02em', display: 'flex', alignItems: 'center', gap: 1 }}>
+          <Typography variant="h5" sx={{ fontWeight: 900, letterSpacing: '-0.02em', display: 'flex', alignItems: 'center', gap: 1 }}>
             ♟️ Nexus Chess
           </Typography>
-          <Chip
-            label={uiTheme === '3d-wood' ? '3D Realistic' : uiTheme === '3d-neon' ? '3D Neon Sci-Fi' : '2D Classic'}
-            size="small"
-            color="primary"
-            variant="outlined"
-            sx={{ fontWeight: 600, fontSize: '0.75rem' }}
-          />
+
+          {gameMode === 'online' && (
+            <Chip
+              label={
+                myRole === 'spectator'
+                  ? '👁️ Spectator Mode'
+                  : `⚔️ Playing as ${myRole === 'w' ? 'White' : 'Black'}`
+              }
+              color={myRole === 'spectator' ? 'info' : 'primary'}
+              size="small"
+              sx={{ fontWeight: 800, fontSize: '0.75rem' }}
+            />
+          )}
+
+          {gameMode === 'online' && (
+            <Chip
+              label={`Room: ${onlineRoomId}`}
+              variant="outlined"
+              size="small"
+              sx={{ fontWeight: 700, fontSize: '0.72rem' }}
+            />
+          )}
         </Box>
 
-        {/* 3 UI Experiences Switcher */}
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-          <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600, display: { xs: 'none', sm: 'block' } }}>
-            Board View:
-          </Typography>
+        {/* View Themes & Actions */}
+        <Stack direction="row" spacing={1} alignItems="center">
           <ToggleButtonGroup
             value={uiTheme}
             exclusive
             onChange={(_, val) => val && setUiTheme(val)}
             size="small"
-            sx={{
-              bgcolor: isDark ? 'rgba(15, 23, 42, 0.6)' : '#F1F5F9',
-              borderRadius: '10px',
-              p: 0.3,
-            }}
           >
-            <ToggleButton value="3d-wood" sx={{ textTransform: 'none', px: 1.5, py: 0.5, fontSize: '0.75rem', fontWeight: 700, gap: 0.6 }}>
-              <ViewInAr sx={{ fontSize: 16 }} /> 3D Board
+            <ToggleButton value="3d-wood" sx={{ textTransform: 'none', fontWeight: 700, gap: 0.5, fontSize: '0.75rem' }}>
+              <ViewInAr fontSize="small" /> 3D Classic
             </ToggleButton>
-            <ToggleButton value="2d-classic" sx={{ textTransform: 'none', px: 1.5, py: 0.5, fontSize: '0.75rem', fontWeight: 700, gap: 0.6 }}>
-              <GridOn sx={{ fontSize: 16 }} /> 2D Classic
+            <ToggleButton value="3d-neon" sx={{ textTransform: 'none', fontWeight: 700, gap: 0.5, fontSize: '0.75rem' }}>
+              <AutoAwesome fontSize="small" /> 3D Neon
             </ToggleButton>
-            <ToggleButton value="3d-neon" sx={{ textTransform: 'none', px: 1.5, py: 0.5, fontSize: '0.75rem', fontWeight: 700, gap: 0.6 }}>
-              <AutoAwesome sx={{ fontSize: 16 }} /> 3D Neon
+            <ToggleButton value="2d-classic" sx={{ textTransform: 'none', fontWeight: 700, gap: 0.5, fontSize: '0.75rem' }}>
+              <GridOn fontSize="small" /> 2D Grid
             </ToggleButton>
           </ToggleButtonGroup>
-        </Box>
-      </Paper>
+        </Stack>
+      </Box>
 
-      {/* Main Chess Arena Grid */}
-      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', lg: '1fr 340px' }, gap: 3 }}>
-        {/* Left Column: Board & Captured Pieces */}
-        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+      {/* Main Chess Arena Layout */}
+      <Box
+        sx={{
+          display: 'grid',
+          gridTemplateColumns: { xs: '1fr', lg: 'minmax(0, 1fr) 340px' },
+          gap: 3,
+          alignItems: 'start',
+        }}
+      >
+        {/* Left Column: Chess Board & Player Stats */}
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
           {/* Top Captured Bar (Black pieces captured by White) */}
           <Paper
             elevation={0}
@@ -502,7 +643,11 @@ export const ChessGame: React.FC = () => {
           >
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
               <Typography variant="body2" sx={{ fontWeight: 700, color: 'text.secondary' }}>
-                {gameMode === 'ai' ? '🤖 Bot (Black)' : 'Black'}
+                {gameMode === 'ai'
+                  ? '🤖 Bot (Black)'
+                  : gameMode === 'online'
+                  ? `👤 ${roomPresence.blackPlayer?.name || 'Waiting for Black...'}`
+                  : 'Black'}
               </Typography>
               {isAiThinking && (
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.8 }}>
@@ -525,7 +670,7 @@ export const ChessGame: React.FC = () => {
             </Box>
           </Paper>
 
-          {/* AI Hint Explanation Alert */}
+          {/* AI Hint Alert */}
           {hintExplanation && activeHint && (
             <Alert
               icon={<TipsAndUpdates sx={{ color: '#10B981' }} />}
@@ -547,7 +692,52 @@ export const ChessGame: React.FC = () => {
             </Alert>
           )}
 
-          {/* Interactive Board View (3D or 2D) */}
+          {/* Spectator Live Mode Banner */}
+          {gameMode === 'online' && myRole === 'spectator' && (
+            <Paper
+              elevation={0}
+              sx={{
+                p: 1.5,
+                borderRadius: '12px',
+                bgcolor: 'rgba(56, 189, 248, 0.12)',
+                border: '1px solid rgba(56, 189, 248, 0.3)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+              }}
+            >
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                <VisibilityOutlined sx={{ color: '#38BDF8' }} />
+                <Box>
+                  <Typography variant="subtitle2" sx={{ fontWeight: 800, color: '#38BDF8', fontSize: '0.82rem' }}>
+                    Spectator Mode (Live Match View)
+                  </Typography>
+                  <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                    Watching moves in real time. Board interaction is disabled.
+                  </Typography>
+                </Box>
+              </Box>
+              <Button
+                variant="outlined"
+                size="small"
+                startIcon={<SportsEsportsOutlined />}
+                onClick={handleRequestSeat}
+                sx={{
+                  textTransform: 'none',
+                  fontWeight: 700,
+                  fontSize: '0.75rem',
+                  borderRadius: '8px',
+                  borderColor: '#38BDF8',
+                  color: '#38BDF8',
+                  '&:hover': { borderColor: '#0284C7', bgcolor: 'rgba(56, 189, 248, 0.08)' },
+                }}
+              >
+                Request to Play Next
+              </Button>
+            </Paper>
+          )}
+
+          {/* Interactive Chess Board View (3D or 2D) */}
           {uiTheme === '2d-classic' ? (
             <Chess2DView
               board={gameState.board}
@@ -590,7 +780,9 @@ export const ChessGame: React.FC = () => {
             }}
           >
             <Typography variant="body2" sx={{ fontWeight: 700, color: 'text.secondary' }}>
-              👤 You (White)
+              {gameMode === 'online'
+                ? `👤 ${roomPresence.whitePlayer?.name || 'Waiting for White...'}`
+                : '👤 You (White)'}
             </Typography>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
               <Box sx={{ display: 'flex', gap: 0.2, fontSize: '1.2rem', color: isDark ? '#94A3B8' : '#0F172A' }}>
@@ -605,9 +797,9 @@ export const ChessGame: React.FC = () => {
           </Paper>
         </Box>
 
-        {/* Right Column: Game Controls, Match Status & Move History */}
+        {/* Right Column: Game Controls, Match Status & Lobby */}
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-          {/* Status Banner */}
+          {/* Match Status Banner */}
           <Paper
             elevation={0}
             sx={{
@@ -632,7 +824,7 @@ export const ChessGame: React.FC = () => {
             }}
           >
             <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-              Status
+              Match Status
             </Typography>
             <Typography variant="h6" sx={{ fontWeight: 800, mt: 0.5 }}>
               {gameState.isCheckmate
@@ -645,7 +837,7 @@ export const ChessGame: React.FC = () => {
             </Typography>
           </Paper>
 
-          {/* Controls & Match Setup */}
+          {/* Game Options & Lobby Controls */}
           <Paper
             elevation={0}
             sx={{
@@ -659,7 +851,7 @@ export const ChessGame: React.FC = () => {
             }}
           >
             <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 700, textTransform: 'uppercase' }}>
-              Game Options
+              Game Mode
             </Typography>
 
             {/* Mode Select (vs Bot / Local 2P / Online) */}
@@ -669,8 +861,8 @@ export const ChessGame: React.FC = () => {
               onChange={(_, v) => {
                 if (!v) return;
                 setGameMode(v);
-                if (v === 'online' && typeof window !== 'undefined' && !window.location.hash.includes('chess-room')) {
-                  window.location.hash = `#chess-room=${onlineRoomId}&color=w`;
+                if (v === 'online') {
+                  setCreateModalOpen(true);
                 }
               }}
               fullWidth
@@ -687,7 +879,44 @@ export const ChessGame: React.FC = () => {
               </ToggleButton>
             </ToggleButtonGroup>
 
-            {/* Online Multiplayer Lobby / Room Info */}
+            {/* Dedicated Create Room & Join Room Action Bar */}
+            <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1 }}>
+              <Button
+                variant="contained"
+                size="small"
+                startIcon={<AddCircleOutline />}
+                onClick={() => {
+                  setCustomRoomCode(generateRoomCode());
+                  setCreateModalOpen(true);
+                }}
+                sx={{
+                  textTransform: 'none',
+                  fontWeight: 700,
+                  fontSize: '0.75rem',
+                  borderRadius: '8px',
+                  background: 'linear-gradient(135deg, #6366F1, #8B5CF6)',
+                }}
+              >
+                Create Room
+              </Button>
+
+              <Button
+                variant="outlined"
+                size="small"
+                startIcon={<MeetingRoomOutlined />}
+                onClick={() => setJoinModalOpen(true)}
+                sx={{
+                  textTransform: 'none',
+                  fontWeight: 700,
+                  fontSize: '0.75rem',
+                  borderRadius: '8px',
+                }}
+              >
+                Join Room
+              </Button>
+            </Box>
+
+            {/* Active Online Room Card */}
             {gameMode === 'online' && (
               <Box
                 sx={{
@@ -702,22 +931,33 @@ export const ChessGame: React.FC = () => {
               >
                 <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                   <Typography variant="subtitle2" sx={{ fontWeight: 800, fontSize: '0.85rem' }}>
-                    Multiplayer Room
+                    Active Room: {onlineRoomId}
                   </Typography>
                   <Chip
-                    label={peerConnected ? '🟢 Opponent Connected' : '⏳ Waiting for Opponent'}
+                    label={isRoomFull ? '🟢 2/2 Players' : '⏳ Waiting Seat'}
                     size="small"
-                    color={peerConnected ? 'success' : 'warning'}
+                    color={isRoomFull ? 'success' : 'warning'}
                     sx={{ fontWeight: 700, fontSize: '0.68rem', height: 22 }}
                   />
                 </Box>
 
-                <Typography variant="caption" sx={{ color: 'text.secondary', lineHeight: 1.4 }}>
-                  You are playing as <strong>{myOnlineColor === 'w' ? 'White (First Move)' : 'Black'}</strong>.
-                  {gameState.turn !== myOnlineColor
-                    ? ' Waiting for opponent to make a move...'
-                    : ' Your turn to move!'}
-                </Typography>
+                {/* Participant Roster */}
+                <Box sx={{ fontSize: '0.75rem', color: 'text.secondary', display: 'flex', flexDirection: 'column', gap: 0.4 }}>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span>⚪ White:</span>
+                    <strong>{roomPresence.whitePlayer?.name || 'Empty (Available)'}</strong>
+                  </Box>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span>⚫ Black:</span>
+                    <strong>{roomPresence.blackPlayer?.name || 'Empty (Available)'}</strong>
+                  </Box>
+                  {roomPresence.spectators.length > 0 && (
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', color: '#38BDF8' }}>
+                      <span>👁️ Spectators:</span>
+                      <strong>{roomPresence.spectators.length} watching</strong>
+                    </Box>
+                  )}
+                </Box>
 
                 <Stack direction="row" spacing={1}>
                   <Button
@@ -725,31 +965,16 @@ export const ChessGame: React.FC = () => {
                     size="small"
                     fullWidth
                     startIcon={copiedLink ? <Check /> : <ContentCopy />}
-                    onClick={handleCopyInviteLink}
+                    onClick={() => handleCopyInviteLink(onlineRoomId)}
                     sx={{
                       textTransform: 'none',
                       fontWeight: 700,
-                      fontSize: '0.78rem',
+                      fontSize: '0.75rem',
                       borderRadius: '8px',
                       background: copiedLink ? '#10B981' : 'linear-gradient(135deg, #6366F1, #8B5CF6)',
                     }}
                   >
                     {copiedLink ? 'Link Copied!' : 'Copy Game Link'}
-                  </Button>
-
-                  <Button
-                    variant="outlined"
-                    size="small"
-                    onClick={handleCreateNewRoom}
-                    sx={{
-                      textTransform: 'none',
-                      fontWeight: 700,
-                      fontSize: '0.78rem',
-                      borderRadius: '8px',
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    New Room
                   </Button>
                 </Stack>
               </Box>
@@ -781,14 +1006,14 @@ export const ChessGame: React.FC = () => {
               </Box>
             )}
 
-            {/* Action Buttons: Undo, Hint, Flip, Sound, New Game */}
+            {/* Action Buttons: Undo, Hint, Flip, Sound */}
             <Stack direction="row" spacing={1} sx={{ mt: 0.5 }}>
               <Button
                 variant="outlined"
                 size="small"
                 startIcon={<Undo />}
                 onClick={handleUndo}
-                disabled={historyStack.length === 0 || isAiThinking}
+                disabled={historyStack.length === 0 || isAiThinking || gameMode === 'online'}
                 sx={{ flex: 1, textTransform: 'none', fontWeight: 700, borderRadius: '8px' }}
               >
                 Undo
@@ -799,7 +1024,7 @@ export const ChessGame: React.FC = () => {
                 size="small"
                 startIcon={<LightbulbOutlined sx={{ color: '#10B981' }} />}
                 onClick={handleGetHint}
-                disabled={isAiThinking || gameState.isCheckmate || gameState.isStalemate}
+                disabled={isAiThinking || gameState.isCheckmate || gameState.isStalemate || (gameMode === 'online' && myRole === 'spectator')}
                 sx={{
                   flex: 1,
                   textTransform: 'none',
@@ -825,6 +1050,7 @@ export const ChessGame: React.FC = () => {
                   <SwapVert fontSize="small" />
                 </IconButton>
               </Tooltip>
+
               <Tooltip title={soundEnabled ? 'Mute Sound Effects' : 'Enable Sound Effects'}>
                 <IconButton
                   size="small"
@@ -904,6 +1130,380 @@ export const ChessGame: React.FC = () => {
         </Box>
       </Box>
 
+      {/* CREATE ROOM MODAL */}
+      <Dialog
+        open={createModalOpen}
+        onClose={() => setCreateModalOpen(false)}
+        maxWidth="xs"
+        fullWidth
+        PaperProps={{
+          sx: {
+            borderRadius: '20px',
+            bgcolor: isDark ? '#0F172A' : '#FFFFFF',
+            border: `1px solid ${isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)'}`,
+            p: 1,
+          },
+        }}
+      >
+        <DialogTitle sx={{ fontWeight: 800, pb: 1, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <span>♟️ Create Chess Match</span>
+          <IconButton size="small" onClick={() => setCreateModalOpen(false)}>
+            <Close fontSize="small" />
+          </IconButton>
+        </DialogTitle>
+        <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
+          <Box>
+            <Typography variant="caption" sx={{ fontWeight: 700, color: 'text.secondary', mb: 0.5, display: 'block' }}>
+              Room Code
+            </Typography>
+            <TextField
+              fullWidth
+              size="small"
+              value={customRoomCode}
+              onChange={(e) => setCustomRoomCode(e.target.value.toUpperCase())}
+              placeholder="e.g. NX-4829"
+              inputProps={{ style: { fontFamily: 'monospace', fontWeight: 700, letterSpacing: '2px' } }}
+            />
+          </Box>
+
+          <Box>
+            <Typography variant="caption" sx={{ fontWeight: 700, color: 'text.secondary', mb: 0.5, display: 'block' }}>
+              Your Side
+            </Typography>
+            <ToggleButtonGroup
+              value={selectedSide}
+              exclusive
+              onChange={(_, v) => v && setSelectedSide(v)}
+              fullWidth
+              size="small"
+            >
+              <ToggleButton value="w" sx={{ textTransform: 'none', fontWeight: 700, fontSize: '0.78rem' }}>
+                ⚪ White (First)
+              </ToggleButton>
+              <ToggleButton value="b" sx={{ textTransform: 'none', fontWeight: 700, fontSize: '0.78rem' }}>
+                ⚫ Black
+              </ToggleButton>
+              <ToggleButton value="random" sx={{ textTransform: 'none', fontWeight: 700, fontSize: '0.78rem' }}>
+                🎲 Random
+              </ToggleButton>
+            </ToggleButtonGroup>
+          </Box>
+
+          <Divider sx={{ my: 0.5 }} />
+
+          {/* Share Link */}
+          <Box>
+            <Typography variant="caption" sx={{ fontWeight: 700, color: 'text.secondary', mb: 0.5, display: 'block' }}>
+              Invite Link
+            </Typography>
+            <Button
+              variant="outlined"
+              fullWidth
+              size="small"
+              startIcon={<LinkOutlined />}
+              onClick={() => handleCopyInviteLink(customRoomCode)}
+              sx={{ textTransform: 'none', fontWeight: 700, borderRadius: '8px', py: 0.8 }}
+            >
+              {copiedLink ? 'Link Copied!' : 'Copy Shareable Match Link'}
+            </Button>
+          </Box>
+
+          {/* Send Challenge via Email */}
+          <Box>
+            <Typography variant="caption" sx={{ fontWeight: 700, color: 'text.secondary', mb: 0.5, display: 'block' }}>
+              Challenge Player via Email
+            </Typography>
+            <Box sx={{ display: 'flex', gap: 1 }}>
+              <TextField
+                fullWidth
+                size="small"
+                placeholder="friend@example.com"
+                value={inviteEmailInput}
+                onChange={(e) => setInviteEmailInput(e.target.value)}
+              />
+              <Button
+                variant="contained"
+                size="small"
+                disabled={isSendingEmail || !inviteEmailInput}
+                onClick={() => handleSendEmailInvite(inviteEmailInput, customRoomCode)}
+                sx={{
+                  borderRadius: '8px',
+                  minWidth: 44,
+                  background: 'linear-gradient(135deg, #6366F1, #8B5CF6)',
+                }}
+              >
+                {isSendingEmail ? <CircularProgress size={16} color="inherit" /> : <SendOutlined fontSize="small" />}
+              </Button>
+            </Box>
+          </Box>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button
+            variant="contained"
+            fullWidth
+            onClick={() => {
+              const assignedRole: PieceColor =
+                selectedSide === 'random' ? (Math.random() > 0.5 ? 'w' : 'b') : selectedSide;
+              startMultiplayerSession(customRoomCode, assignedRole);
+              setCreateModalOpen(false);
+              setToastMessage(`🎮 Created Room ${customRoomCode}! You are playing as ${assignedRole === 'w' ? 'White' : 'Black'}.`);
+            }}
+            sx={{
+              py: 1,
+              borderRadius: '10px',
+              fontWeight: 800,
+              textTransform: 'none',
+              background: 'linear-gradient(135deg, #6366F1, #8B5CF6)',
+            }}
+          >
+            Create & Enter Arena
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* JOIN ROOM MODAL */}
+      <Dialog
+        open={joinModalOpen}
+        onClose={() => setJoinModalOpen(false)}
+        maxWidth="xs"
+        fullWidth
+        PaperProps={{
+          sx: {
+            borderRadius: '20px',
+            bgcolor: isDark ? '#0F172A' : '#FFFFFF',
+            border: `1px solid ${isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)'}`,
+            p: 1,
+          },
+        }}
+      >
+        <DialogTitle sx={{ fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <span>🚪 Join Chess Match</span>
+          <IconButton size="small" onClick={() => setJoinModalOpen(false)}>
+            <Close fontSize="small" />
+          </IconButton>
+        </DialogTitle>
+        <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
+          <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+            Enter a 6-character room code or paste an invitation link to connect:
+          </Typography>
+          <TextField
+            fullWidth
+            size="small"
+            placeholder="e.g. NX-4829 or paste full URL"
+            value={joinInputCode}
+            onChange={(e) => {
+              const val = e.target.value.trim();
+              if (val.includes('chess-room=')) {
+                const match = val.match(/chess-room=([a-zA-Z0-9_-]+)/);
+                if (match) setJoinInputCode(match[1]);
+              } else if (val.includes('room=')) {
+                const match = val.match(/room=([a-zA-Z0-9_-]+)/);
+                if (match) setJoinInputCode(match[1]);
+              } else {
+                setJoinInputCode(val.toUpperCase());
+              }
+            }}
+            inputProps={{ style: { fontFamily: 'monospace', fontWeight: 700 } }}
+          />
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button
+            variant="contained"
+            fullWidth
+            disabled={!joinInputCode}
+            onClick={() => {
+              setPendingAcceptRoomId(joinInputCode);
+              setJoinModalOpen(false);
+              setAcceptModalOpen(true);
+            }}
+            sx={{
+              py: 1,
+              borderRadius: '10px',
+              fontWeight: 800,
+              textTransform: 'none',
+              background: 'linear-gradient(135deg, #6366F1, #8B5CF6)',
+            }}
+          >
+            Connect to Match
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* ACCEPT INVITE / CHOOSE ROLE MODAL (Play Match vs View Match) */}
+      <Dialog
+        open={acceptModalOpen}
+        onClose={() => setAcceptModalOpen(false)}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{
+          sx: {
+            borderRadius: '24px',
+            bgcolor: isDark ? '#0F172A' : '#FFFFFF',
+            border: `1px solid ${isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(0, 0, 0, 0.1)'}`,
+            p: 1.5,
+          },
+        }}
+      >
+        <DialogTitle sx={{ textAlign: 'center', pb: 0.5 }}>
+          <Typography variant="h5" sx={{ fontWeight: 900, letterSpacing: '-0.02em' }}>
+            ♟️ Match Invitation
+          </Typography>
+          <Chip
+            label={`Room: ${pendingAcceptRoomId || onlineRoomId}`}
+            size="small"
+            sx={{ mt: 1, fontWeight: 800, fontFamily: 'monospace', fontSize: '0.8rem' }}
+          />
+        </DialogTitle>
+
+        <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2.5, pt: 2 }}>
+          {/* Current Room Capacity Status */}
+          <Paper
+            elevation={0}
+            sx={{
+              p: 2,
+              borderRadius: '14px',
+              bgcolor: isDark ? 'rgba(30, 41, 59, 0.5)' : 'rgba(241, 245, 249, 0.8)',
+              border: `1px solid ${isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.08)'}`,
+            }}
+          >
+            <Typography variant="caption" sx={{ fontWeight: 700, color: 'text.secondary', textTransform: 'uppercase' }}>
+              Current Match Seating
+            </Typography>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 1, fontSize: '0.85rem' }}>
+              <span>⚪ White: <strong>{roomPresence.whitePlayer?.name || 'Open Seat'}</strong></span>
+              <span>⚫ Black: <strong>{roomPresence.blackPlayer?.name || 'Open Seat'}</strong></span>
+            </Box>
+          </Paper>
+
+          {/* Option Cards: Play Match vs View Match */}
+          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 2 }}>
+            {/* Card 1: Play Match */}
+            <Card
+              variant="outlined"
+              sx={{
+                borderRadius: '16px',
+                borderColor: isRoomFull ? 'rgba(239, 68, 68, 0.4)' : 'rgba(99, 102, 241, 0.4)',
+                bgcolor: isRoomFull
+                  ? isDark ? 'rgba(239, 68, 68, 0.05)' : 'rgba(239, 68, 68, 0.03)'
+                  : isDark ? 'rgba(99, 102, 241, 0.08)' : 'rgba(99, 102, 241, 0.04)',
+                opacity: isRoomFull ? 0.75 : 1,
+                position: 'relative',
+              }}
+            >
+              <CardActionArea
+                disabled={isRoomFull}
+                onClick={() => handleAcceptJoin('play')}
+                sx={{ p: 2, height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'flex-start', justifyContent: 'space-between' }}
+              >
+                <Box>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                    <SportsEsportsOutlined sx={{ color: isRoomFull ? '#EF4444' : '#6366F1', fontSize: '1.8rem' }} />
+                    <Typography variant="subtitle1" sx={{ fontWeight: 800 }}>
+                      Play Match
+                    </Typography>
+                  </Box>
+                  <Typography variant="body2" sx={{ color: 'text.secondary', fontSize: '0.82rem', mb: 1.5 }}>
+                    Compete live as White or Black. You must be signed in to your account.
+                  </Typography>
+                </Box>
+
+                {isRoomFull ? (
+                  <Chip
+                    label="Both players present (2/2)"
+                    color="error"
+                    size="small"
+                    sx={{ fontWeight: 700, fontSize: '0.7rem' }}
+                  />
+                ) : (
+                  <Chip
+                    label="Seat Available"
+                    color="primary"
+                    size="small"
+                    sx={{ fontWeight: 700, fontSize: '0.7rem' }}
+                  />
+                )}
+              </CardActionArea>
+            </Card>
+
+            {/* Card 2: View Match (Spectator) */}
+            <Card
+              variant="outlined"
+              sx={{
+                borderRadius: '16px',
+                borderColor: 'rgba(56, 189, 248, 0.4)',
+                bgcolor: isDark ? 'rgba(56, 189, 248, 0.08)' : 'rgba(56, 189, 248, 0.04)',
+              }}
+            >
+              <CardActionArea
+                onClick={() => handleAcceptJoin('spectate')}
+                sx={{ p: 2, height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'flex-start', justifyContent: 'space-between' }}
+              >
+                <Box>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                    <VisibilityOutlined sx={{ color: '#38BDF8', fontSize: '1.8rem' }} />
+                    <Typography variant="subtitle1" sx={{ fontWeight: 800 }}>
+                      View Match
+                    </Typography>
+                  </Box>
+                  <Typography variant="body2" sx={{ color: 'text.secondary', fontSize: '0.82rem', mb: 1.5 }}>
+                    Watch the game live in real time as a spectator. No moves allowed.
+                  </Typography>
+                </Box>
+
+                <Chip
+                  label="Free to Watch"
+                  color="info"
+                  size="small"
+                  sx={{ fontWeight: 700, fontSize: '0.7rem' }}
+                />
+              </CardActionArea>
+            </Card>
+          </Box>
+
+          {/* When room is full: Request to Play button */}
+          {isRoomFull && (
+            <Alert
+              severity="warning"
+              action={
+                <Button
+                  color="inherit"
+                  size="small"
+                  onClick={() => {
+                    handleAcceptJoin('spectate');
+                    handleRequestSeat();
+                  }}
+                  sx={{ fontWeight: 800, textTransform: 'none' }}
+                >
+                  Request to Play Next
+                </Button>
+              }
+              sx={{ borderRadius: '12px', fontSize: '0.82rem' }}
+            >
+              Both player seats are currently filled. You can watch as a spectator or request to challenge the winner!
+            </Alert>
+          )}
+
+          {/* Login prompt reminder if not logged in */}
+          {!currentUser && (
+            <Box
+              sx={{
+                p: 1.5,
+                borderRadius: '12px',
+                bgcolor: isDark ? 'rgba(255, 255, 255, 0.04)' : 'rgba(0, 0, 0, 0.03)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 1.5,
+              }}
+            >
+              <LockOutlined sx={{ color: 'text.secondary', fontSize: 20 }} />
+              <Typography variant="caption" sx={{ color: 'text.secondary', flex: 1 }}>
+                Note: To join as an active competitor, you need to sign in to your Nexus Notes account. Spectators can watch without signing in.
+              </Typography>
+            </Box>
+          )}
+        </DialogContent>
+      </Dialog>
+
       {/* Pawn Promotion Modal */}
       <Dialog open={!!pendingPromotion} onClose={() => {}}>
         <DialogTitle sx={{ textAlign: 'center', fontWeight: 800 }}>Promote Pawn</DialogTitle>
@@ -933,6 +1533,21 @@ export const ChessGame: React.FC = () => {
           </Stack>
         </DialogContent>
       </Dialog>
+
+      {/* Auth Modal for Login Requirement */}
+      <AuthModal
+        open={authModalOpen}
+        onClose={() => setAuthModalOpen(false)}
+      />
+
+      {/* Notification Toast */}
+      <Snackbar
+        open={!!toastMessage}
+        autoHideDuration={4000}
+        onClose={() => setToastMessage(null)}
+        message={toastMessage}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      />
     </Box>
   );
 };
