@@ -27,15 +27,21 @@ import {
   SettingsOutlined,
   DescriptionOutlined,
   KeyboardCommandKey,
+  PictureAsPdfOutlined,
+  FileDownloadOutlined,
+  FileUploadOutlined,
+  SportsEsportsOutlined,
 } from '@mui/icons-material';
 import { Note } from '../../types/note';
 
 export interface CommandItem {
   id: string;
   title: string;
-  category: 'General' | 'Notes' | 'Navigation' | 'Sync';
+  subtitle?: string;
+  category: 'General' | 'Notes' | 'Navigation' | 'Sync' | 'Actions';
   icon: React.ReactNode;
   shortcut?: string;
+  badge?: string;
   action: () => void;
 }
 
@@ -43,22 +49,34 @@ interface CommandPaletteProps {
   open: boolean;
   onClose: () => void;
   notes: Note[];
+  currentNote?: Note | null;
   onSelectNote: (noteId: string) => void;
   onCreateNote: () => void;
   onToggleTheme: () => void;
   onToggleGraph: () => void;
   onTriggerSync: () => void;
+  onExportMarkdown?: () => void;
+  onExportPdf?: () => void;
+  onImportMarkdown?: () => void;
+}
+
+function stripHtml(html: string): string {
+  return html ? html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim() : '';
 }
 
 export const CommandPalette = ({
   open,
   onClose,
   notes,
+  currentNote,
   onSelectNote,
   onCreateNote,
   onToggleTheme,
   onToggleGraph,
   onTriggerSync,
+  onExportMarkdown,
+  onExportPdf,
+  onImportMarkdown,
 }: CommandPaletteProps): React.ReactElement => {
   const theme = useTheme();
   const [query, setQuery] = useState('');
@@ -78,8 +96,42 @@ export const CommandPalette = ({
       },
     },
     {
+      id: 'cmd-import-note',
+      title: 'Import Markdown Note (.md)',
+      category: 'Actions',
+      icon: <FileUploadOutlined fontSize="small" sx={{ color: '#10B981' }} />,
+      action: () => {
+        onImportMarkdown?.();
+        onClose();
+      },
+    },
+    ...(currentNote
+      ? [
+          {
+            id: 'cmd-export-pdf',
+            title: `Export "${currentNote.title}" as PDF`,
+            category: 'Actions' as const,
+            icon: <PictureAsPdfOutlined fontSize="small" sx={{ color: '#EF4444' }} />,
+            action: () => {
+              onExportPdf?.();
+              onClose();
+            },
+          },
+          {
+            id: 'cmd-export-md',
+            title: `Export "${currentNote.title}" as Markdown (.md)`,
+            category: 'Actions' as const,
+            icon: <FileDownloadOutlined fontSize="small" sx={{ color: '#06B6D4' }} />,
+            action: () => {
+              onExportMarkdown?.();
+              onClose();
+            },
+          },
+        ]
+      : []),
+    {
       id: 'cmd-toggle-graph',
-      title: 'Toggle 3D Knowledge Graph',
+      title: 'Open 3D Knowledge Graph',
       category: 'Navigation',
       icon: <HubOutlined fontSize="small" sx={{ color: '#A855F7' }} />,
       shortcut: 'Ctrl+G',
@@ -112,27 +164,71 @@ export const CommandPalette = ({
     },
   ];
 
-  // Dynamically map notes to command items
+  // Full-Text Search across ALL Notes (Titles AND Content)
   const noteCommands: CommandItem[] = useMemo(() => {
-    return notes.slice(0, 8).map((note: Note) => ({
-      id: `note-${note.id}`,
-      title: `Open Note: ${note.title}`,
-      category: 'Notes',
-      icon: <DescriptionOutlined fontSize="small" sx={{ color: '#818CF8' }} />,
-      action: () => {
-        onSelectNote(note.id);
-        onClose();
-      },
-    }));
-  }, [notes, onSelectNote, onClose]);
+    const q = query.trim().toLowerCase();
 
-  const allCommands = useMemo(() => [...defaultCommands, ...noteCommands], [defaultCommands, noteCommands]);
+    return notes
+      .map((note: Note) => {
+        const titleMatch = note.title.toLowerCase().includes(q);
+        const plainContent = stripHtml(note.content || '');
+        const contentIdx = q ? plainContent.toLowerCase().indexOf(q) : -1;
+        const contentMatch = contentIdx !== -1;
+
+        if (q && !titleMatch && !contentMatch) {
+          return null; // Exclude non-matching notes when querying
+        }
+
+        let snippet: string | undefined;
+        let badge: string | undefined;
+
+        if (q) {
+          if (titleMatch && contentMatch) {
+            badge = 'Title & Content';
+          } else if (titleMatch) {
+            badge = 'Title';
+          } else {
+            badge = 'Content Match';
+          }
+
+          if (contentMatch) {
+            const start = Math.max(0, contentIdx - 28);
+            const end = Math.min(plainContent.length, contentIdx + q.length + 42);
+            snippet = `${start > 0 ? '...' : ''}${plainContent.slice(start, end)}${end < plainContent.length ? '...' : ''}`;
+          }
+        }
+
+        return {
+          id: `note-${note.id}`,
+          title: note.title || 'Untitled Note',
+          subtitle: snippet || plainContent.slice(0, 60),
+          category: 'Notes' as const,
+          badge,
+          icon: <DescriptionOutlined fontSize="small" sx={{ color: '#818CF8' }} />,
+          action: () => {
+            onSelectNote(note.id);
+            onClose();
+          },
+        };
+      })
+      .filter(Boolean) as CommandItem[];
+  }, [notes, query, onSelectNote, onClose]);
+
+  const allCommands = useMemo(() => {
+    if (!query.trim()) {
+      return [...defaultCommands, ...noteCommands.slice(0, 8)];
+    }
+    return [...noteCommands, ...defaultCommands];
+  }, [defaultCommands, noteCommands, query]);
 
   const filteredCommands = useMemo(() => {
     if (!query.trim()) return allCommands;
     const q = query.toLowerCase();
     return allCommands.filter(
-      (c) => c.title.toLowerCase().includes(q) || c.category.toLowerCase().includes(q)
+      (c) =>
+        c.title.toLowerCase().includes(q) ||
+        c.category.toLowerCase().includes(q) ||
+        (c.subtitle && c.subtitle.toLowerCase().includes(q))
     );
   }, [allCommands, query]);
 
@@ -238,9 +334,42 @@ export const CommandPalette = ({
                   <ListItemIcon sx={{ minWidth: 36 }}>{cmd.icon}</ListItemIcon>
                   <ListItemText
                     primary={
-                      <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                        {cmd.title}
-                      </Typography>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                          {cmd.title}
+                        </Typography>
+                        {cmd.badge && (
+                          <Chip
+                            label={cmd.badge}
+                            size="small"
+                            sx={{
+                              height: 18,
+                              fontSize: '0.62rem',
+                              fontWeight: 700,
+                              bgcolor: cmd.badge.includes('Content')
+                                ? 'rgba(16, 185, 129, 0.15)'
+                                : 'rgba(99, 102, 241, 0.15)',
+                              color: cmd.badge.includes('Content') ? '#10B981' : '#818CF8',
+                            }}
+                          />
+                        )}
+                      </Box>
+                    }
+                    secondary={
+                      cmd.subtitle ? (
+                        <Typography
+                          variant="caption"
+                          sx={{
+                            color: 'text.secondary',
+                            display: '-webkit-box',
+                            WebkitLineClamp: 1,
+                            WebkitBoxOrient: 'vertical',
+                            overflow: 'hidden',
+                          }}
+                        >
+                          {cmd.subtitle}
+                        </Typography>
+                      ) : undefined
                     }
                   />
                   {cmd.shortcut && (

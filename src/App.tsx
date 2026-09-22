@@ -16,6 +16,8 @@ import {
   Paper,
   Divider,
   Alert,
+  Menu,
+  MenuItem,
 } from '@mui/material';
 import {
   Menu as MenuIcon,
@@ -38,9 +40,13 @@ import {
   ArrowBack,
   CreateNewFolderOutlined,
   DeleteOutline,
+  FileDownloadOutlined,
+  FileUploadOutlined,
+  PictureAsPdfOutlined,
 } from '@mui/icons-material';
 import confetti from 'canvas-confetti';
 import { v4 as uuidv4 } from 'uuid';
+import { exportNoteToMarkdown, exportNoteToPdf, parseMarkdownFile } from './utils/exportImport';
 
 import { createAppTheme } from './theme/theme';
 import { db, seedInitialLocalData } from './modules/storage/db';
@@ -100,6 +106,8 @@ export const App: React.FC = () => {
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [shareModalOpen, setShareModalOpen] = useState(false);
+  const [exportAnchorEl, setExportAnchorEl] = useState<null | HTMLElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Active modal ref for back gesture interception
   const activeModalRef = useRef<string | null>(null);
@@ -456,6 +464,64 @@ export const App: React.FC = () => {
       } else {
         setSelectedNoteId(null);
       }
+    }
+  };
+
+  // Export and Import Handlers
+  const handleExportMarkdown = useCallback(() => {
+    if (currentNote) {
+      exportNoteToMarkdown(currentNote);
+    }
+  }, [currentNote]);
+
+  const handleExportPdf = useCallback(() => {
+    if (currentNote) {
+      exportNoteToPdf(currentNote);
+    }
+  }, [currentNote]);
+
+  const handleImportFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (isReadOnly) {
+      openModal('auth');
+      return;
+    }
+    try {
+      const { title, content } = await parseMarkdownFile(file);
+      const newId = `note-${uuidv4().slice(0, 8)}`;
+      const now = new Date().toISOString();
+
+      const newNote: Note = {
+        id: newId,
+        workspaceId: currentWorkspace.id,
+        folderId: currentFolder?.id || folders[0]?.id || null,
+        title,
+        icon: '📝',
+        content,
+        plainText: content.replace(/<[^>]+>/g, ' '),
+        tags: [],
+        authorId: currentUser?.id || 'user-self',
+        authorName: currentUser?.name || 'Workspace Author',
+        isPinned: false,
+        isFavorite: false,
+        isArchived: false,
+        backlinks: [],
+        version: 1,
+        createdAt: now,
+        updatedAt: now,
+      };
+
+      await db.notes.add(newNote);
+      await mutationQueue.enqueue('note', newId, 'create', newNote, 1);
+
+      setNotes((prev) => [newNote, ...prev]);
+      navigateTo('editor', newId);
+    } catch (err) {
+      console.error('Failed to import markdown file:', err);
+      alert('Failed to parse Markdown file.');
+    } finally {
+      if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
 
@@ -865,6 +931,65 @@ export const App: React.FC = () => {
 
               {activeView === 'editor' && currentNote && (
                 <>
+                  {/* Hidden File Input for Markdown Import */}
+                  <input
+                    type="file"
+                    ref={fileInputRef}
+                    onChange={handleImportFile}
+                    accept=".md,.markdown,.txt"
+                    style={{ display: 'none' }}
+                  />
+
+                  {/* Import Note Button */}
+                  <Tooltip title="Import Markdown (.md)">
+                    <IconButton
+                      size="small"
+                      disabled={isReadOnly}
+                      onClick={() => {
+                        if (isReadOnly) openModal('auth');
+                        else fileInputRef.current?.click();
+                      }}
+                    >
+                      <FileUploadOutlined fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
+
+                  {/* Export Menu Button */}
+                  <Tooltip title="Export Document (PDF / Markdown)">
+                    <IconButton
+                      size="small"
+                      onClick={(e) => setExportAnchorEl(e.currentTarget)}
+                    >
+                      <FileDownloadOutlined fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
+
+                  <Menu
+                    anchorEl={exportAnchorEl}
+                    open={Boolean(exportAnchorEl)}
+                    onClose={() => setExportAnchorEl(null)}
+                    PaperProps={{ sx: { borderRadius: '10px', minWidth: 190 } }}
+                  >
+                    <MenuItem
+                      onClick={() => {
+                        setExportAnchorEl(null);
+                        handleExportPdf();
+                      }}
+                      sx={{ gap: 1.2, fontSize: '0.85rem' }}
+                    >
+                      <PictureAsPdfOutlined fontSize="small" sx={{ color: '#EF4444' }} /> Export as PDF
+                    </MenuItem>
+                    <MenuItem
+                      onClick={() => {
+                        setExportAnchorEl(null);
+                        handleExportMarkdown();
+                      }}
+                      sx={{ gap: 1.2, fontSize: '0.85rem' }}
+                    >
+                      <FileDownloadOutlined fontSize="small" sx={{ color: '#06B6D4' }} /> Export as Markdown (.md)
+                    </MenuItem>
+                  </Menu>
+
                   <Tooltip title={currentNote.isPinned ? 'Unpin note' : 'Pin note'}>
                     <IconButton
                       size="small"
@@ -1051,6 +1176,7 @@ export const App: React.FC = () => {
         open={commandPaletteOpen}
         onClose={() => closeModal('palette')}
         notes={notes}
+        currentNote={currentNote}
         onSelectNote={(id) => {
           closeModal('palette');
           navigateTo('editor', id);
@@ -1062,6 +1188,9 @@ export const App: React.FC = () => {
         onToggleTheme={handleToggleTheme}
         onToggleGraph={() => navigateTo(activeView === 'graph' ? 'editor' : 'graph', selectedNoteId)}
         onTriggerSync={handleForceSync}
+        onExportMarkdown={handleExportMarkdown}
+        onExportPdf={handleExportPdf}
+        onImportMarkdown={() => fileInputRef.current?.click()}
       />
 
       {/* Conflict Resolution Dialog */}
