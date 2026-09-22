@@ -97,14 +97,44 @@ async function ensurePostgresTable() {
         created_at TIMESTAMPTZ DEFAULT NOW(),
         updated_at TIMESTAMPTZ DEFAULT NOW()
       );
+
+      CREATE TABLE IF NOT EXISTS nexus_notes (
+        id VARCHAR(255) PRIMARY KEY,
+        workspace_id VARCHAR(255) DEFAULT 'ws-default-nexus',
+        folder_id VARCHAR(255),
+        title TEXT NOT NULL,
+        content TEXT DEFAULT '',
+        plain_text TEXT DEFAULT '',
+        icon VARCHAR(64) DEFAULT '📝',
+        tags JSONB DEFAULT '[]'::jsonb,
+        is_pinned BOOLEAN DEFAULT FALSE,
+        is_archived BOOLEAN DEFAULT FALSE,
+        is_trash BOOLEAN DEFAULT FALSE,
+        version INT DEFAULT 1,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS nexus_mutations (
+        operation_id VARCHAR(255) PRIMARY KEY,
+        client_id VARCHAR(255) NOT NULL,
+        workspace_id VARCHAR(255) DEFAULT 'ws-default-nexus',
+        entity_type VARCHAR(64) NOT NULL,
+        entity_id VARCHAR(255) NOT NULL,
+        operation_type VARCHAR(32) NOT NULL,
+        payload JSONB NOT NULL,
+        base_version INT DEFAULT 0,
+        applied_at TIMESTAMPTZ DEFAULT NOW()
+      );
     `);
     dbInitialized = true;
   } catch (err: any) {
-    console.error('Error ensuring PostgreSQL nexus_users table:', err.message);
+    console.error('Error ensuring PostgreSQL tables:', err.message);
   } finally {
     isEnsuringTable = false;
   }
 }
+
 
 /**
  * Saves a user record to PostgreSQL (if connected) and local persistent cache
@@ -257,3 +287,179 @@ export function decryptVerificationToken(token: string): { email: string; code: 
     return null;
   }
 }
+
+/**
+ * Persists an idempotent mutation record into memory and Neon PostgreSQL
+ */
+export async function saveMutation(op: any): Promise<void> {
+  if (!op || !op.operationId) return;
+  const now = new Date().toISOString();
+  const mutationRecord = { ...op, appliedAt: now };
+  operations.set(op.operationId, mutationRecord);
+
+  if (pool) {
+    try {
+      await ensurePostgresTable();
+      await pool.query(
+        `INSERT INTO nexus_mutations (operation_id, client_id, workspace_id, entity_type, entity_id, operation_type, payload, base_version, applied_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
+         ON CONFLICT (operation_id) DO NOTHING`,
+        [
+          op.operationId,
+          op.clientId || 'anonymous-client',
+          op.workspaceId || 'ws-default-nexus',
+          op.entityType,
+          op.entityId,
+          op.operationType,
+          JSON.stringify(op.payload || {}),
+          op.baseVersion || 0,
+        ]
+      );
+    } catch (err: any) {
+      console.error('Error saving mutation to PostgreSQL:', err.message);
+    }
+  }
+}
+
+/**
+ * Fetches mutations applied since a specific checkpoint timestamp
+ */
+export async function getMutationsSince(since?: string): Promise<any[]> {
+  if (pool) {
+    try {
+      await ensurePostgresTable();
+      let query = `SELECT operation_id, client_id, workspace_id, entity_type, entity_id, operation_type, payload, base_version, applied_at FROM nexus_mutations`;
+      const params: any[] = [];
+      if (since) {
+        query += ` WHERE applied_at > $1`;
+        params.push(since);
+      }
+      query += ` ORDER BY applied_at ASC`;
+      const res = await pool.query(query, params);
+      return res.rows.map((row) => ({
+        operationId: row.operation_id,
+        clientId: row.client_id,
+        workspaceId: row.workspace_id,
+        entityType: row.entity_type,
+        entityId: row.entity_id,
+        operationType: row.operation_type,
+        payload: typeof row.payload === 'string' ? JSON.parse(row.payload) : row.payload,
+        version: (row.base_version || 0) + 1,
+        timestamp: row.applied_at.toISOString ? row.applied_at.toISOString() : row.applied_at,
+        sourceClientId: row.client_id,
+      }));
+    } catch (err: any) {
+      console.error('Error fetching mutations from PostgreSQL:', err.message);
+    }
+  }
+
+  // Fallback to in-memory operations cache
+  const ops = Array.from(operations.values());
+  return ops
+    .filter((op) => !since || op.appliedAt > since)
+    .map((op) => ({
+      operationId: op.operationId,
+      entityType: op.entityType,
+      entityId: op.entityId,
+      operationType: op.operationType,
+      payload: op.payload,
+      version: (op.baseVersion || 0) + 1,
+      timestamp: op.appliedAt,
+      sourceClientId: op.clientId,
+    }));
+}
+
+/**
+ * Saves or updates a note in memory and Neon PostgreSQL
+ */
+export async function saveNote(note: any): Promise<void> {
+  if (!note || !note.id) return;
+  notes.set(note.id, note);
+
+  if (pool) {
+    try {
+      await ensurePostgresTable();
+      await pool.query(
+        `INSERT INTO nexus_notes (id, workspace_id, folder_id, title, content, plain_text, icon, tags, is_pinned, is_archived, is_trash, version, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW())
+         ON CONFLICT (id) DO UPDATE SET
+           title = EXCLUDED.title,
+           content = EXCLUDED.content,
+           plain_text = EXCLUDED.plain_text,
+           icon = EXCLUDED.icon,
+           tags = EXCLUDED.tags,
+           is_pinned = EXCLUDED.is_pinned,
+           is_archived = EXCLUDED.is_archived,
+           is_trash = EXCLUDED.is_trash,
+           version = EXCLUDED.version,
+           updated_at = NOW()`,
+        [
+          note.id,
+          note.workspaceId || 'ws-default-nexus',
+          note.folderId || null,
+          note.title || 'Untitled Note',
+          note.content || '',
+          note.plainText || '',
+          note.icon || '📝',
+          JSON.stringify(note.tags || []),
+          Boolean(note.isPinned),
+          Boolean(note.isArchived),
+          Boolean(note.isTrash),
+          note.version || 1,
+        ]
+      );
+    } catch (err: any) {
+      console.error('Error saving note to PostgreSQL:', err.message);
+    }
+  }
+}
+
+/**
+ * Deletes a note from memory and Neon PostgreSQL
+ */
+export async function deleteNote(noteId: string): Promise<void> {
+  if (!noteId) return;
+  notes.delete(noteId);
+
+  if (pool) {
+    try {
+      await ensurePostgresTable();
+      await pool.query(`DELETE FROM nexus_notes WHERE id = $1`, [noteId]);
+    } catch (err: any) {
+      console.error('Error deleting note from PostgreSQL:', err.message);
+    }
+  }
+}
+
+/**
+ * Retrieves all notes from Neon PostgreSQL (or in-memory fallback)
+ */
+export async function getNotes(): Promise<any[]> {
+  if (pool) {
+    try {
+      await ensurePostgresTable();
+      const res = await pool.query(`SELECT * FROM nexus_notes WHERE is_trash = FALSE ORDER BY updated_at DESC`);
+      return res.rows.map((row) => ({
+        id: row.id,
+        workspaceId: row.workspace_id,
+        folderId: row.folder_id,
+        title: row.title,
+        content: row.content,
+        plainText: row.plain_text,
+        icon: row.icon,
+        tags: typeof row.tags === 'string' ? JSON.parse(row.tags) : row.tags,
+        isPinned: row.is_pinned,
+        isArchived: row.is_archived,
+        isTrash: row.is_trash,
+        version: row.version,
+        updatedAt: row.updated_at.toISOString ? row.updated_at.toISOString() : row.updated_at,
+        createdAt: row.created_at.toISOString ? row.created_at.toISOString() : row.created_at,
+      }));
+    } catch (err: any) {
+      console.error('Error fetching notes from PostgreSQL:', err.message);
+    }
+  }
+
+  return Array.from(notes.values());
+}
+

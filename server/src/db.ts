@@ -129,14 +129,44 @@ class ServerDatabase {
           created_at TIMESTAMPTZ DEFAULT NOW(),
           updated_at TIMESTAMPTZ DEFAULT NOW()
         );
+
+        CREATE TABLE IF NOT EXISTS nexus_notes (
+          id VARCHAR(255) PRIMARY KEY,
+          workspace_id VARCHAR(255) DEFAULT 'ws-default-nexus',
+          folder_id VARCHAR(255),
+          title TEXT NOT NULL,
+          content TEXT DEFAULT '',
+          plain_text TEXT DEFAULT '',
+          icon VARCHAR(64) DEFAULT '📝',
+          tags JSONB DEFAULT '[]'::jsonb,
+          is_pinned BOOLEAN DEFAULT FALSE,
+          is_archived BOOLEAN DEFAULT FALSE,
+          is_trash BOOLEAN DEFAULT FALSE,
+          version INT DEFAULT 1,
+          created_at TIMESTAMPTZ DEFAULT NOW(),
+          updated_at TIMESTAMPTZ DEFAULT NOW()
+        );
+
+        CREATE TABLE IF NOT EXISTS nexus_mutations (
+          operation_id VARCHAR(255) PRIMARY KEY,
+          client_id VARCHAR(255) NOT NULL,
+          workspace_id VARCHAR(255) DEFAULT 'ws-default-nexus',
+          entity_type VARCHAR(64) NOT NULL,
+          entity_id VARCHAR(255) NOT NULL,
+          operation_type VARCHAR(32) NOT NULL,
+          payload JSONB NOT NULL,
+          base_version INT DEFAULT 0,
+          applied_at TIMESTAMPTZ DEFAULT NOW()
+        );
       `);
       this.dbInitialized = true;
     } catch (err: any) {
-      console.warn('[serverDb] Error ensuring PostgreSQL nexus_users table:', err.message);
+      console.warn('[serverDb] Error ensuring PostgreSQL tables:', err.message);
     } finally {
       this.isEnsuringTable = false;
     }
   }
+
 
   public async loadUsersFromPostgres() {
     if (!this.pool) return;
@@ -317,7 +347,70 @@ class ServerDatabase {
     } else if (op.operationType === 'delete') {
       table.delete(op.entityId);
     }
+
+    // Persist to Neon PostgreSQL if pool is active
+    if (this.pool) {
+      this.ensurePostgresTable().then(async () => {
+        try {
+          await this.pool!.query(
+            `INSERT INTO nexus_mutations (operation_id, client_id, workspace_id, entity_type, entity_id, operation_type, payload, base_version, applied_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
+             ON CONFLICT (operation_id) DO NOTHING`,
+            [
+              op.operationId,
+              op.clientId || 'anonymous-client',
+              op.payload?.workspaceId || 'ws-default-nexus',
+              op.entityType,
+              op.entityId,
+              op.operationType,
+              JSON.stringify(op.payload || {}),
+              op.baseVersion || 0,
+            ]
+          );
+
+          if (op.entityType === 'note') {
+            if (op.operationType === 'create' || op.operationType === 'update') {
+              const p = op.payload || {};
+              await this.pool!.query(
+                `INSERT INTO nexus_notes (id, workspace_id, folder_id, title, content, plain_text, icon, tags, is_pinned, is_archived, is_trash, version, updated_at)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW())
+                 ON CONFLICT (id) DO UPDATE SET
+                   title = EXCLUDED.title,
+                   content = EXCLUDED.content,
+                   plain_text = EXCLUDED.plain_text,
+                   icon = EXCLUDED.icon,
+                   tags = EXCLUDED.tags,
+                   is_pinned = EXCLUDED.is_pinned,
+                   is_archived = EXCLUDED.is_archived,
+                   is_trash = EXCLUDED.is_trash,
+                   version = EXCLUDED.version,
+                   updated_at = NOW()`,
+                [
+                  op.entityId,
+                  p.workspaceId || 'ws-default-nexus',
+                  p.folderId || null,
+                  p.title || 'Untitled Note',
+                  p.content || '',
+                  p.plainText || '',
+                  p.icon || '📝',
+                  JSON.stringify(p.tags || []),
+                  Boolean(p.isPinned),
+                  Boolean(p.isArchived),
+                  Boolean(p.isTrash),
+                  p.version || 1,
+                ]
+              );
+            } else if (op.operationType === 'delete') {
+              await this.pool!.query(`DELETE FROM nexus_notes WHERE id = $1`, [op.entityId]);
+            }
+          }
+        } catch (err: any) {
+          console.warn('[serverDb] Error persisting mutation to PostgreSQL:', err.message);
+        }
+      });
+    }
   }
 }
+
 
 export const serverDb = new ServerDatabase();
