@@ -32,6 +32,7 @@ import {
   FileUploadOutlined,
   SportsEsportsOutlined,
   LockOutlined,
+  GraphicEqOutlined,
 } from '@mui/icons-material';
 import { Note } from '../../types/note';
 
@@ -60,6 +61,7 @@ interface CommandPaletteProps {
   onExportPdf?: () => void;
   onImportMarkdown?: () => void;
   onLockCurrentNote?: () => void;
+  onOpenVoiceRecorder?: () => void;
 }
 
 function stripHtml(html: string): string {
@@ -80,6 +82,7 @@ export const CommandPalette = ({
   onExportPdf,
   onImportMarkdown,
   onLockCurrentNote,
+  onOpenVoiceRecorder,
 }: CommandPaletteProps): React.ReactElement => {
   const theme = useTheme();
   const [query, setQuery] = useState('');
@@ -137,6 +140,16 @@ export const CommandPalette = ({
             icon: <LockOutlined fontSize="small" sx={{ color: '#F59E0B' }} />,
             action: () => {
               onLockCurrentNote?.();
+              onClose();
+            },
+          },
+          {
+            id: 'cmd-record-memo',
+            title: `Record Voice Memo for "${currentNote.title}"`,
+            category: 'Actions' as const,
+            icon: <GraphicEqOutlined fontSize="small" sx={{ color: '#10B981' }} />,
+            action: () => {
+              onOpenVoiceRecorder?.();
               onClose();
             },
           },

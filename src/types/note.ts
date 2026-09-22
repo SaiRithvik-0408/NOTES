@@ -100,6 +100,16 @@ export interface NoteAttachment {
   createdAt: string;
 }
 
+export interface AudioMemo {
+  id: string;
+  noteId: string;
+  title: string;
+  audioData: string; // Base64 Data URI
+  duration: number; // in seconds
+  transcript: string;
+  createdAt: string;
+}
+
 export interface Note {
   id: string;
   workspaceId: string;
@@ -121,6 +131,7 @@ export interface Note {
   isLocked?: boolean;
   lockHint?: string;
   encryptedPayload?: string; // Serialized AES-256-GCM EncryptedVaultPayload
+  audioMemos?: AudioMemo[]; // Recorded voice memos with real-time AI transcription
   createdAt: string;
   updatedAt: string;
 }

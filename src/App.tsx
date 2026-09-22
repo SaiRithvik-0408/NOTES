@@ -39,6 +39,7 @@ import {
   LockOutlined,
   LockOpenOutlined,
   Security,
+  GraphicEqOutlined,
   PersonAddOutlined,
   ArrowBack,
   CreateNewFolderOutlined,
@@ -57,12 +58,13 @@ import { useNotePresence } from './utils/presenceManager';
 import { encryptNoteContent } from './utils/cryptoVault';
 import { NoteVaultLockScreen } from './components/vault/NoteVaultLockScreen';
 import { LockNoteDialog } from './components/vault/LockNoteDialog';
+import { VoiceMemoRecorderDialog, VoiceMemosShelf } from './components/audio/VoiceMemoHub';
 
 
 
 import { createAppTheme } from './theme/theme';
 import { db, seedInitialLocalData } from './modules/storage/db';
-import { Note, Folder, Workspace, Tag, NoteRevision, NoteComment, NoteAttachment, WorkspaceMember, WorkspaceRole } from './types/note';
+import { Note, Folder, Workspace, Tag, NoteRevision, NoteComment, NoteAttachment, WorkspaceMember, WorkspaceRole, AudioMemo } from './types/note';
 import { SyncStatus, ConflictRecord } from './types/sync';
 import { mutationQueue } from './modules/sync/MutationQueue';
 import { localSyncProvider } from './modules/sync/LocalSyncProvider';
@@ -249,6 +251,9 @@ export const App: React.FC = () => {
   // End-to-End Encrypted Vault Notes
   const [unlockedVaults, setUnlockedVaults] = useState<Record<string, { content: string; passphrase: string }>>({});
   const [lockDialogOpen, setLockDialogOpen] = useState(false);
+
+  // Voice Memos & AI Audio Transcription
+  const [voiceMemoDialogOpen, setVoiceMemoDialogOpen] = useState(false);
 
   // Note-scoped subdata
   const [comments, setComments] = useState<NoteComment[]>([]);
@@ -578,6 +583,60 @@ export const App: React.FC = () => {
     setNotes((prev) => prev.map((n) => (n.id === currentNote.id ? updatedNote : n)));
     await db.notes.put(updatedNote);
     await mutationQueue.enqueue('note', updatedNote.id, 'update', updatedNote, currentNote.version);
+  };
+
+  // Voice Memo Handlers
+  const handleSaveAudioMemo = async (
+    title: string,
+    audioData: string,
+    duration: number,
+    transcript: string
+  ) => {
+    if (!currentNote || isReadOnly) return;
+    const newMemo: AudioMemo = {
+      id: `memo-${uuidv4().slice(0, 8)}`,
+      noteId: currentNote.id,
+      title,
+      audioData,
+      duration,
+      transcript,
+      createdAt: new Date().toISOString(),
+    };
+    const updatedMemos = [...(currentNote.audioMemos || []), newMemo];
+    const now = new Date().toISOString();
+    const updatedNote: Note = {
+      ...currentNote,
+      audioMemos: updatedMemos,
+      updatedAt: now,
+      version: currentNote.version + 1,
+    };
+    setNotes((prev) => prev.map((n) => (n.id === currentNote.id ? updatedNote : n)));
+    await db.notes.put(updatedNote);
+    await mutationQueue.enqueue('note', updatedNote.id, 'update', updatedNote, currentNote.version);
+    confetti({ particleCount: 35, spread: 70, origin: { y: 0.6 } });
+  };
+
+  const handleDeleteAudioMemo = async (memoId: string) => {
+    if (!currentNote || isReadOnly) return;
+    const updatedMemos = (currentNote.audioMemos || []).filter((m) => m.id !== memoId);
+    const now = new Date().toISOString();
+    const updatedNote: Note = {
+      ...currentNote,
+      audioMemos: updatedMemos,
+      updatedAt: now,
+      version: currentNote.version + 1,
+    };
+    setNotes((prev) => prev.map((n) => (n.id === currentNote.id ? updatedNote : n)));
+    await db.notes.put(updatedNote);
+    await mutationQueue.enqueue('note', updatedNote.id, 'update', updatedNote, currentNote.version);
+  };
+
+  const handleInsertAudioTranscript = async (transcript: string) => {
+    if (!currentNote || isReadOnly) return;
+    const addition = `<p></p><blockquote>🎙️ <strong>Voice Memo Transcript:</strong><br/>${transcript}</blockquote><p></p>`;
+    const newContent = `${currentNote.content}${addition}`;
+    await handleUpdateNoteContent(newContent, `${currentNote.plainText}\n\nVoice Memo: ${transcript}`);
+    confetti({ particleCount: 25, spread: 50, origin: { y: 0.7 } });
   };
 
   const handleImportFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1261,6 +1320,23 @@ export const App: React.FC = () => {
                     </Tooltip>
                   )}
 
+                  {/* Voice Memo Button */}
+                  <Tooltip title="Record Voice Memo with AI Transcription">
+                    <IconButton
+                      size="small"
+                      disabled={isReadOnly}
+                      onClick={() => setVoiceMemoDialogOpen(true)}
+                      sx={{
+                        color: (currentNote.audioMemos?.length || 0) > 0 ? '#10B981' : 'default',
+                        '&:hover': { color: '#10B981' },
+                      }}
+                    >
+                      <Badge badgeContent={currentNote.audioMemos?.length || 0} color="success" max={9}>
+                        <GraphicEqOutlined fontSize="small" />
+                      </Badge>
+                    </IconButton>
+                  </Tooltip>
+
                   <Tooltip title={currentNote.isPinned ? 'Unpin note' : 'Pin note'}>
                     <IconButton
                       size="small"
@@ -1403,6 +1479,16 @@ export const App: React.FC = () => {
                     </Box>
                   </Box>
 
+                  {/* Voice Memos & Audio Transcripts Shelf */}
+                  {currentNote.audioMemos && currentNote.audioMemos.length > 0 && (
+                    <VoiceMemosShelf
+                      memos={currentNote.audioMemos}
+                      onOpenRecorder={() => setVoiceMemoDialogOpen(true)}
+                      onDeleteMemo={handleDeleteAudioMemo}
+                      onInsertTranscript={handleInsertAudioTranscript}
+                    />
+                  )}
+
                   <Divider sx={{ mb: 3 }} />
 
                   {/* Rich Text Editor */}
@@ -1491,6 +1577,14 @@ export const App: React.FC = () => {
         onExportPdf={handleExportPdf}
         onImportMarkdown={() => fileInputRef.current?.click()}
         onLockCurrentNote={() => setLockDialogOpen(true)}
+        onOpenVoiceRecorder={() => setVoiceMemoDialogOpen(true)}
+      />
+
+      {/* Voice Memo Recorder Dialog */}
+      <VoiceMemoRecorderDialog
+        open={voiceMemoDialogOpen}
+        onClose={() => setVoiceMemoDialogOpen(false)}
+        onSaveMemo={handleSaveAudioMemo}
       />
 
       {/* End-to-End Encrypted Vault Lock Dialog */}
