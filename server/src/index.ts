@@ -439,8 +439,14 @@ app.get('/api/v1/share/:token', (req, res) => {
 });
 
 const server = http.createServer(app);
-setupWebSocketServer(server);
 
-server.listen(PORT, () => {
-  console.log(`🚀 Nexus Notes backend server listening on http://localhost:${PORT}`);
-});
+// Only listen to port and spin up WebSockets when running as standalone Node process
+if (process.env.VERCEL !== '1') {
+  setupWebSocketServer(server);
+  server.listen(PORT, () => {
+    console.log(`🚀 Nexus Notes backend server listening on http://localhost:${PORT}`);
+  });
+}
+
+export { app, server };
+export default app;
