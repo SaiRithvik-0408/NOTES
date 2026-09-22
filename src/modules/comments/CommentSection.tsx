@@ -22,6 +22,7 @@ import {
 } from '@mui/icons-material';
 import { NoteComment, NoteCommentReply } from '../../types/note';
 import { v4 as uuidv4 } from 'uuid';
+import { useAuth } from '../auth/AuthContext';
 
 interface CommentSectionProps {
   noteId: string;
@@ -39,6 +40,7 @@ export const CommentSection: React.FC<CommentSectionProps> = ({
   onAddReply,
 }) => {
   const theme = useTheme();
+  const { currentUser } = useAuth();
   const [newCommentText, setNewCommentText] = useState('');
   const [replyingToId, setReplyingToId] = useState<string | null>(null);
   const [replyText, setReplyText] = useState('');
@@ -50,9 +52,9 @@ export const CommentSection: React.FC<CommentSectionProps> = ({
     const newComment: NoteComment = {
       id: `comment-${uuidv4()}`,
       noteId,
-      authorId: 'user-self',
-      authorName: 'Alex Rivera',
-      authorAvatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80',
+      authorId: currentUser?.id || 'user-self',
+      authorName: currentUser?.name || 'Workspace Member',
+      authorAvatar: currentUser?.avatarUrl,
       content: newCommentText.trim(),
       resolved: false,
       replies: [],
@@ -70,9 +72,9 @@ export const CommentSection: React.FC<CommentSectionProps> = ({
     const reply: NoteCommentReply = {
       id: `reply-${uuidv4()}`,
       commentId,
-      authorId: 'user-self',
-      authorName: 'Alex Rivera',
-      authorAvatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80',
+      authorId: currentUser?.id || 'user-self',
+      authorName: currentUser?.name || 'Workspace Member',
+      authorAvatar: currentUser?.avatarUrl,
       content: replyText.trim(),
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),

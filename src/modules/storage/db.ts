@@ -43,18 +43,16 @@ export class NexusDatabase extends Dexie {
 
 export const db = new NexusDatabase();
 
-// Helper seed function for initial workspace and notes if IndexedDB is empty
+// Helper seed function for initial workspace and notes with 1 sample folder and 1 document
 export async function seedInitialLocalData(): Promise<void> {
   const count = await db.workspaces.count();
-  if (count > 0) return;
-
   const now = new Date().toISOString();
   const defaultWorkspaceId = 'ws-default-nexus';
 
   const defaultWorkspace: Workspace = {
     id: defaultWorkspaceId,
-    name: 'Nexus Engineering Workspace',
-    slug: 'nexus-engineering',
+    name: 'Personal Workspace',
+    slug: 'personal-workspace',
     icon: '⚡',
     description: 'Local-first collaborative intelligence, product planning, and technical architecture.',
     ownerId: 'user-self',
@@ -62,102 +60,61 @@ export async function seedInitialLocalData(): Promise<void> {
     updatedAt: now,
   };
 
-  const folders: Folder[] = [
-    {
-      id: 'folder-product',
-      workspaceId: defaultWorkspaceId,
-      name: 'Product & Vision',
-      icon: '🚀',
-      order: 1,
-      createdAt: now,
-      updatedAt: now,
-    },
-    {
-      id: 'folder-engineering',
-      workspaceId: defaultWorkspaceId,
-      name: 'Architecture & RFCs',
-      icon: '⚙️',
-      order: 2,
-      createdAt: now,
-      updatedAt: now,
-    },
-    {
-      id: 'folder-designs',
-      workspaceId: defaultWorkspaceId,
-      name: 'UX & Design Systems',
-      icon: '🎨',
-      order: 3,
-      createdAt: now,
-      updatedAt: now,
-    },
-  ];
+  const sampleFolder: Folder = {
+    id: 'folder-sample',
+    workspaceId: defaultWorkspaceId,
+    name: 'Sample Folder',
+    icon: '📁',
+    order: 1,
+    createdAt: now,
+    updatedAt: now,
+  };
 
-  const initialNotes: Note[] = [
-    {
-      id: 'note-manifesto',
-      workspaceId: defaultWorkspaceId,
-      folderId: 'folder-product',
-      title: 'Nexus Notes: The Local-First Manifesto',
-      icon: '✨',
-      content: `<h1>Nexus Notes: The Local-First Manifesto</h1><p>Welcome to <strong>Nexus Notes</strong> — the hybrid convergence of <em>Notion</em>, <em>Google Docs</em>, <em>Obsidian</em>, and <em>Linear</em>.</p><h3>Why Local-First?</h3><blockquote><p>Your thoughts shouldn't wait for a cloud round-trip. Offline isn't an error state; it's a first-class operating reality.</p></blockquote><ul><li><strong>Zero-Latency Typing</strong>: All writes happen instantly against your local IndexedDB.</li><li><strong>CRDT Synchronization</strong>: Collaborative document updates merge deterministically using Yjs.</li><li><strong>Interactive Knowledge Graph</strong>: Navigate your interconnected thinking in 3D.</li><li><strong>Command Palette</strong>: Press <kbd>Ctrl+K</kbd> anywhere to search, jump, or execute actions.</li></ul><p>Explore your backlinks: [[System Architecture RFC]] and [[Bespoke Design Philosophy]].</p>`,
-      plainText: 'Nexus Notes: The Local-First Manifesto. Welcome to Nexus Notes. Why Local-First? Zero-latency typing, CRDT synchronization, 3D knowledge graph, Command Palette.',
-      tags: ['manifesto', 'vision', 'local-first'],
-      authorId: 'user-self',
-      authorName: 'Workspace Author',
-      isPinned: true,
-      isFavorite: true,
-      isArchived: false,
-      backlinks: ['note-arch-rfc', 'note-design-spec'],
-      version: 1,
-      lastSyncedAt: now,
-      createdAt: now,
-      updatedAt: now,
-    },
-    {
-      id: 'note-arch-rfc',
-      workspaceId: defaultWorkspaceId,
-      folderId: 'folder-engineering',
-      title: 'System Architecture RFC: Sync & CRDTs',
-      icon: '📐',
-      content: `<h2>Architecture RFC: Mutation Pipeline</h2><p>This RFC outlines the synchronization engine powering Nexus Notes.</p><pre><code>Client Mutation Queue -> UUID Operation IDs -> Exponential Backoff -> WebSocket / Supabase SyncProvider</code></pre><p>Key tenets:</p><ol><li><strong>Idempotency</strong>: Every change carries a unique UUID operation ID.</li><li><strong>Deterministic Merging</strong>: TipTap rich text utilizes Y.Doc binary updates.</li><li><strong>Interactive Resolution</strong>: Metadata conflicts present a 3-way visual resolution dialog.</li></ol><p>See also [[Nexus Notes: The Local-First Manifesto]].</p>`,
-      plainText: 'System Architecture RFC: Sync & CRDTs. Client Mutation Queue, UUID Operation IDs, Exponential Backoff, Idempotency, Deterministic Merging.',
-      tags: ['architecture', 'sync', 'crdt', 'rfc'],
-      authorId: 'user-self',
-      authorName: 'Workspace Author',
-      isPinned: true,
-      isFavorite: false,
-      isArchived: false,
-      backlinks: ['note-manifesto'],
-      version: 1,
-      lastSyncedAt: now,
-      createdAt: now,
-      updatedAt: now,
-    },
-    {
-      id: 'note-design-spec',
-      workspaceId: defaultWorkspaceId,
-      folderId: 'folder-designs',
-      title: 'Bespoke Design Philosophy',
-      icon: '🎨',
-      content: `<h2>Bespoke Design Philosophy</h2><p>Crafting a workspace that feels calm, intelligent, fast, and creative.</p><ul><li><strong>Deep Cosmic Palette</strong>: High-contrast obsidian backgrounds (#090D16) with vibrant indigo accents (#6366F1).</li><li><strong>Typography Precision</strong>: Headings set in Plus Jakarta Sans, body copy in Inter, code in JetBrains Mono.</li><li><strong>Glassmorphic HUD</strong>: Backdrops with subtle 16px blur filters and frosted borders.</li></ul>`,
-      plainText: 'Bespoke Design Philosophy. Crafting a workspace that feels calm, intelligent, fast, and creative. Deep Cosmic Palette, Typography Precision, Glassmorphic HUD.',
-      tags: ['design', 'tokens', 'mui'],
-      authorId: 'user-self',
-      authorName: 'Workspace Author',
-      isPinned: false,
-      isFavorite: true,
-      isArchived: false,
-      backlinks: ['note-manifesto'],
-      version: 1,
-      lastSyncedAt: now,
-      createdAt: now,
-      updatedAt: now,
-    },
-  ];
+  const sampleNote: Note = {
+    id: 'note-sample',
+    workspaceId: defaultWorkspaceId,
+    folderId: 'folder-sample',
+    title: 'Sample Note',
+    icon: '📝',
+    content: '<h1>Sample Note</h1><p>Welcome to Nexus Notes! This is your sample document. Start editing, organize notes into folders, explore relationships in the 3D Knowledge Graph, or brainstorm on the visual whiteboard.</p>',
+    plainText: 'Sample Note. Welcome to Nexus Notes! This is your sample document.',
+    tags: ['sample'],
+    authorId: 'user-self',
+    authorName: 'Workspace Author',
+    isPinned: false,
+    isFavorite: false,
+    isArchived: false,
+    backlinks: [],
+    version: 1,
+    lastSyncedAt: now,
+    createdAt: now,
+    updatedAt: now,
+  };
 
-  await db.transaction('rw', [db.workspaces, db.folders, db.notes], async () => {
-    await db.workspaces.add(defaultWorkspace);
-    await db.folders.bulkAdd(folders);
-    await db.notes.bulkAdd(initialNotes);
-  });
+  if (count === 0) {
+    await db.transaction('rw', [db.workspaces, db.folders, db.notes], async () => {
+      await db.workspaces.add(defaultWorkspace);
+      await db.folders.add(sampleFolder);
+      await db.notes.add(sampleNote);
+    });
+    return;
+  }
+
+  // Automatic Migration: if old 3-folder demo seeds exist, clean them up
+  const oldFolder = await db.folders.get('folder-product');
+  if (oldFolder) {
+    await db.transaction('rw', [db.folders, db.notes], async () => {
+      await db.folders.where('id').anyOf(['folder-product', 'folder-engineering', 'folder-designs']).delete();
+      await db.notes.where('id').anyOf(['note-manifesto', 'note-arch-rfc', 'note-design-spec']).delete();
+
+      const existingFolders = await db.folders.count();
+      if (existingFolders === 0) {
+        await db.folders.add(sampleFolder);
+      }
+      const existingNotes = await db.notes.count();
+      if (existingNotes === 0) {
+        await db.notes.add(sampleNote);
+      }
+    });
+  }
 }

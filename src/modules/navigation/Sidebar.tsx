@@ -17,6 +17,12 @@ import {
   useTheme,
   Avatar,
   Badge,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Menu,
+  MenuItem,
 } from '@mui/material';
 import {
   Add,
@@ -37,6 +43,11 @@ import {
   FiberManualRecord,
   KeyboardCommandKey,
   PersonAddOutlined,
+  CreateNewFolderOutlined,
+  DeleteOutline,
+  DriveFileRenameOutline,
+  MoreVert,
+  LockOutlined,
 } from '@mui/icons-material';
 import { Note, Folder, Workspace, Tag } from '../../types/note';
 import { SyncStatus } from '../../types/sync';
@@ -61,6 +72,12 @@ interface SidebarProps {
   onOpenCommandPalette: () => void;
   onOpenAuthModal: () => void;
   onOpenShareModal: () => void;
+  onCreateFolder?: (name: string, icon?: string) => void;
+  onRenameFolder?: (folderId: string, newName: string) => void;
+  onDeleteFolder?: (folderId: string) => void;
+  onDeleteNote?: (noteId: string) => void;
+  isReadOnly?: boolean;
+  onRequireAuth?: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -81,18 +98,43 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onOpenCommandPalette,
   onOpenAuthModal,
   onOpenShareModal,
+  onCreateFolder,
+  onRenameFolder,
+  onDeleteFolder,
+  onDeleteNote,
+  isReadOnly = false,
+  onRequireAuth,
 }) => {
   const theme = useTheme();
   const { currentUser } = useAuth();
   const [searchQuery, setSearchQuery] = useState('');
   const [openFolders, setOpenFolders] = useState<Record<string, boolean>>({
-    'folder-product': true,
-    'folder-engineering': true,
-    'folder-designs': true,
+    'folder-sample': true,
   });
+
+  // Folder Dialog & Menu States
+  const [newFolderDialogOpen, setNewFolderDialogOpen] = useState(false);
+  const [newFolderName, setNewFolderName] = useState('');
+  const [renameTarget, setRenameTarget] = useState<Folder | null>(null);
+  const [renameName, setRenameName] = useState('');
+  const [folderMenuAnchor, setFolderMenuAnchor] = useState<{ el: HTMLElement; folder: Folder } | null>(null);
 
   const toggleFolder = (folderId: string) => {
     setOpenFolders((prev) => ({ ...prev, [folderId]: !prev[folderId] }));
+  };
+
+  const handleConfirmCreateFolder = () => {
+    if (!newFolderName.trim()) return;
+    onCreateFolder?.(newFolderName.trim(), '📁');
+    setNewFolderName('');
+    setNewFolderDialogOpen(false);
+  };
+
+  const handleConfirmRenameFolder = () => {
+    if (!renameTarget || !renameName.trim()) return;
+    onRenameFolder?.(renameTarget.id, renameName.trim());
+    setRenameTarget(null);
+    setRenameName('');
   };
 
   const filteredNotes = notes.filter((n) => {
@@ -106,75 +148,89 @@ export const Sidebar: React.FC<SidebarProps> = ({
   });
 
   const pinnedNotes = filteredNotes.filter((n) => n.isPinned);
+  const uncategorizedNotes = filteredNotes.filter(
+    (n) => !n.folderId || !folders.some((f) => f.id === n.folderId)
+  );
 
   return (
     <Box
       sx={{
         width: 280,
         height: '100%',
+        bgcolor: theme.palette.mode === 'dark' ? '#070A12' : '#F8FAFC',
+        borderRight: `1px solid ${theme.palette.divider}`,
         display: 'flex',
         flexDirection: 'column',
-        bgcolor: theme.palette.mode === 'dark' ? '#090D16' : '#F8FAFC',
-        borderRight: `1px solid ${theme.palette.divider}`,
+        flexShrink: 0,
         userSelect: 'none',
       }}
     >
       {/* Workspace Header */}
-      <Box sx={{ p: 2, pb: 1.5, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+      <Box
+        sx={{
+          p: 2,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          borderBottom: `1px solid ${theme.palette.divider}`,
+        }}
+      >
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.2 }}>
           <Box
             component="img"
             src="/logo.svg"
-            alt="Nexus Notes Logo"
-            sx={{ width: 32, height: 32, borderRadius: '8px' }}
+            alt="Nexus Logo"
+            sx={{ width: 28, height: 28, borderRadius: '6px' }}
           />
           <Box>
-            <Typography variant="subtitle1" sx={{ fontWeight: 800, lineHeight: 1.2, letterSpacing: '-0.02em' }}>
+            <Typography variant="subtitle2" sx={{ fontWeight: 800, lineHeight: 1.2 }}>
               Nexus Notes
             </Typography>
-            <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '0.72rem', display: 'block' }}>
+            <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '0.7rem' }}>
               {currentWorkspace.name}
             </Typography>
           </Box>
         </Box>
 
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-          <Tooltip title="Invite People / Share Workspace">
-            <IconButton size="small" onClick={onOpenShareModal} sx={{ border: `1px solid ${theme.palette.divider}`, borderRadius: '6px' }}>
-              <PersonAddOutlined fontSize="small" sx={{ color: 'primary.main' }} />
+        <Box sx={{ display: 'flex', gap: 0.5 }}>
+          <Tooltip title="Share Workspace">
+            <IconButton size="small" onClick={onOpenShareModal}>
+              <PersonAddOutlined fontSize="small" />
             </IconButton>
           </Tooltip>
-
-          <Tooltip title="Command Palette (Ctrl+K)">
-            <IconButton size="small" onClick={onOpenCommandPalette} sx={{ border: `1px solid ${theme.palette.divider}`, borderRadius: '6px' }}>
+          <Tooltip title="Quick Search (Ctrl+K)">
+            <IconButton size="small" onClick={onOpenCommandPalette}>
               <KeyboardCommandKey fontSize="small" />
             </IconButton>
           </Tooltip>
         </Box>
       </Box>
 
-      {/* Sync Status Banner */}
-      <Box sx={{ px: 2, py: 1 }}>
+      {/* Sync Status Pill Indicator */}
+      <Box sx={{ px: 2, py: 1, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <SyncStatusIndicator
           status={syncStatus}
           onForceSync={onForceSync}
           onToggleSimulatedOffline={onToggleSimulatedOffline}
           isSimulatedOffline={isSimulatedOffline}
         />
+        <Tooltip title={isSimulatedOffline ? 'Simulated Offline Mode' : 'Connected to Local-First Sync Engine'}>
+          <FiberManualRecord sx={{ fontSize: 10, color: isSimulatedOffline ? 'warning.main' : 'success.main' }} />
+        </Tooltip>
       </Box>
 
-      {/* Search Input Box */}
-      <Box sx={{ px: 2, py: 1 }}>
+      {/* Search Bar */}
+      <Box sx={{ px: 2, py: 0.5 }}>
         <TextField
-          fullWidth
           size="small"
           placeholder="Search notes or tags..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
+          fullWidth
           InputProps={{
             startAdornment: (
               <InputAdornment position="start">
-                <Search sx={{ fontSize: 18, color: 'text.secondary' }} />
+                <Search sx={{ fontSize: 16, color: 'text.secondary' }} />
               </InputAdornment>
             ),
             sx: {
@@ -186,22 +242,30 @@ export const Sidebar: React.FC<SidebarProps> = ({
         />
       </Box>
 
-      {/* Quick Action Buttons */}
+      {/* Quick Action Button */}
       <Box sx={{ px: 2, py: 1, display: 'flex', gap: 1 }}>
         <Button
           fullWidth
           variant="contained"
           size="small"
-          startIcon={<Add />}
-          onClick={() => onCreateNote()}
+          startIcon={isReadOnly ? <LockOutlined sx={{ fontSize: 16 }} /> : <Add />}
+          onClick={() => {
+            if (isReadOnly) {
+              onRequireAuth?.();
+            } else {
+              onCreateNote();
+            }
+          }}
           sx={{
             borderRadius: '8px',
             py: 0.8,
             fontSize: '0.78rem',
-            background: 'linear-gradient(135deg, #6366F1, #8B5CF6)',
+            background: isReadOnly
+              ? 'linear-gradient(135deg, #475569, #334155)'
+              : 'linear-gradient(135deg, #6366F1, #8B5CF6)',
           }}
         >
-          New Note
+          {isReadOnly ? 'Sign in to Create' : 'New Note'}
         </Button>
       </Box>
 
@@ -261,30 +325,76 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     onSelectView('editor');
                     onSelectNote(note.id);
                   }}
-                  sx={{ py: 0.5, px: 1.2, borderRadius: '6px' }}
+                  sx={{
+                    py: 0.4,
+                    px: 1,
+                    borderRadius: '6px',
+                    mb: 0.2,
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    '&:hover .delete-btn': { opacity: 1 },
+                  }}
                 >
-                  <ListItemIcon sx={{ minWidth: 24, fontSize: '0.9rem' }}>
-                    {note.icon || '📌'}
-                  </ListItemIcon>
-                  <ListItemText
-                    primary={
-                      <Typography variant="body2" noWrap sx={{ fontSize: '0.82rem', fontWeight: selectedNoteId === note.id ? 600 : 400 }}>
-                        {note.title}
-                      </Typography>
-                    }
-                  />
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, overflow: 'hidden' }}>
+                    <ListItemIcon sx={{ minWidth: 20, fontSize: '0.85rem' }}>
+                      {note.icon || '📌'}
+                    </ListItemIcon>
+                    <ListItemText
+                      primary={
+                        <Typography variant="body2" noWrap sx={{ fontSize: '0.8rem', fontWeight: selectedNoteId === note.id ? 600 : 400 }}>
+                          {note.title}
+                        </Typography>
+                      }
+                    />
+                  </Box>
+                  <Tooltip title="Delete note">
+                    <IconButton
+                      size="small"
+                      className="delete-btn"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (isReadOnly) {
+                          onRequireAuth?.();
+                        } else if (window.confirm(`Delete "${note.title}"?`)) {
+                          onDeleteNote?.(note.id);
+                        }
+                      }}
+                      sx={{ p: 0.2, opacity: 0, color: 'text.secondary', '&:hover': { color: 'error.main' } }}
+                    >
+                      <DeleteOutline sx={{ fontSize: 14 }} />
+                    </IconButton>
+                  </Tooltip>
                 </ListItemButton>
               ))}
             </List>
           </Box>
         )}
 
-        {/* Folders & Notes Hierarchy */}
-        <Typography variant="caption" sx={{ px: 1.2, color: 'text.secondary', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-          Folders & Documents
-        </Typography>
+        {/* Folders & Notes Hierarchy Header */}
+        <Box sx={{ px: 1.2, display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.5 }}>
+          <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+            Folders & Documents
+          </Typography>
+          <Tooltip title="Create New Folder">
+            <IconButton
+              size="small"
+              onClick={() => {
+                if (isReadOnly) {
+                  onRequireAuth?.();
+                } else {
+                  setNewFolderName('');
+                  setNewFolderDialogOpen(true);
+                }
+              }}
+              sx={{ p: 0.3, color: 'text.secondary', '&:hover': { color: 'primary.main' } }}
+            >
+              <CreateNewFolderOutlined sx={{ fontSize: 16 }} />
+            </IconButton>
+          </Tooltip>
+        </Box>
 
-        <List dense sx={{ p: 0, mt: 0.5 }}>
+        {/* Folder List */}
+        <List dense sx={{ p: 0 }}>
           {folders.map((folder) => {
             const folderNotes = filteredNotes.filter((n) => n.folderId === folder.id);
             const isOpen = openFolders[folder.id] ?? true;
@@ -293,12 +403,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <Box key={folder.id} sx={{ mb: 0.5 }}>
                 <ListItemButton
                   onClick={() => toggleFolder(folder.id)}
-                  sx={{ py: 0.4, px: 1, borderRadius: '6px' }}
+                  sx={{
+                    py: 0.4,
+                    px: 1,
+                    borderRadius: '6px',
+                    '&:hover .folder-actions': { opacity: 1 },
+                  }}
                 >
-                  <ListItemIcon sx={{ minWidth: 22, color: 'text.secondary' }}>
+                  <ListItemIcon sx={{ minWidth: 20, color: 'text.secondary' }}>
                     {isOpen ? <ExpandMore sx={{ fontSize: 16 }} /> : <ChevronRight sx={{ fontSize: 16 }} />}
                   </ListItemIcon>
-                  <ListItemIcon sx={{ minWidth: 24, fontSize: '0.9rem' }}>
+                  <ListItemIcon sx={{ minWidth: 22, fontSize: '0.9rem' }}>
                     {folder.icon || '📁'}
                   </ListItemIcon>
                   <ListItemText
@@ -311,18 +426,37 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   <Typography variant="caption" sx={{ color: 'text.muted', mr: 0.5 }}>
                     {folderNotes.length}
                   </Typography>
-                  <Tooltip title="Add Note in Folder">
-                    <IconButton
-                      size="small"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onCreateNote(folder.id);
-                      }}
-                      sx={{ p: 0.2, opacity: 0.7, '&:hover': { opacity: 1 } }}
-                    >
-                      <Add sx={{ fontSize: 14 }} />
-                    </IconButton>
-                  </Tooltip>
+
+                  <Box className="folder-actions" sx={{ display: 'flex', alignItems: 'center', opacity: 0.7 }}>
+                    <Tooltip title="Add Note in Folder">
+                      <IconButton
+                        size="small"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (isReadOnly) {
+                            onRequireAuth?.();
+                          } else {
+                            onCreateNote(folder.id);
+                          }
+                        }}
+                        sx={{ p: 0.2, '&:hover': { color: 'primary.main' } }}
+                      >
+                        <Add sx={{ fontSize: 14 }} />
+                      </IconButton>
+                    </Tooltip>
+                    <Tooltip title="Folder Options">
+                      <IconButton
+                        size="small"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setFolderMenuAnchor({ el: e.currentTarget, folder });
+                        }}
+                        sx={{ p: 0.2, '&:hover': { color: 'primary.main' } }}
+                      >
+                        <MoreVert sx={{ fontSize: 14 }} />
+                      </IconButton>
+                    </Tooltip>
+                  </Box>
                 </ListItemButton>
 
                 {/* Nested Notes */}
@@ -336,18 +470,45 @@ export const Sidebar: React.FC<SidebarProps> = ({
                           onSelectView('editor');
                           onSelectNote(note.id);
                         }}
-                        sx={{ py: 0.4, px: 1, borderRadius: '6px', mb: 0.2 }}
+                        sx={{
+                          py: 0.35,
+                          px: 1,
+                          borderRadius: '6px',
+                          mb: 0.2,
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          '&:hover .delete-btn': { opacity: 1 },
+                        }}
                       >
-                        <ListItemIcon sx={{ minWidth: 22, fontSize: '0.85rem' }}>
-                          {note.icon || '📄'}
-                        </ListItemIcon>
-                        <ListItemText
-                          primary={
-                            <Typography variant="body2" noWrap sx={{ fontSize: '0.8rem', fontWeight: selectedNoteId === note.id ? 600 : 400 }}>
-                              {note.title}
-                            </Typography>
-                          }
-                        />
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, overflow: 'hidden' }}>
+                          <ListItemIcon sx={{ minWidth: 20, fontSize: '0.85rem' }}>
+                            {note.icon || '📄'}
+                          </ListItemIcon>
+                          <ListItemText
+                            primary={
+                              <Typography variant="body2" noWrap sx={{ fontSize: '0.8rem', fontWeight: selectedNoteId === note.id ? 600 : 400 }}>
+                                {note.title}
+                              </Typography>
+                            }
+                          />
+                        </Box>
+                        <Tooltip title="Delete note">
+                          <IconButton
+                            size="small"
+                            className="delete-btn"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (isReadOnly) {
+                                onRequireAuth?.();
+                              } else if (window.confirm(`Delete note "${note.title}"?`)) {
+                                onDeleteNote?.(note.id);
+                              }
+                            }}
+                            sx={{ p: 0.2, opacity: 0, color: 'text.secondary', '&:hover': { color: 'error.main' } }}
+                          >
+                            <DeleteOutline sx={{ fontSize: 13 }} />
+                          </IconButton>
+                        </Tooltip>
                       </ListItemButton>
                     ))}
                   </List>
@@ -356,6 +517,66 @@ export const Sidebar: React.FC<SidebarProps> = ({
             );
           })}
         </List>
+
+        {/* Uncategorized / Root Notes if any */}
+        {uncategorizedNotes.length > 0 && (
+          <Box sx={{ mt: 1 }}>
+            <Typography variant="caption" sx={{ px: 1.2, color: 'text.secondary', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              Other Notes
+            </Typography>
+            <List dense sx={{ p: 0, mt: 0.5 }}>
+              {uncategorizedNotes.map((note) => (
+                <ListItemButton
+                  key={note.id}
+                  selected={selectedNoteId === note.id && activeView === 'editor'}
+                  onClick={() => {
+                    onSelectView('editor');
+                    onSelectNote(note.id);
+                  }}
+                  sx={{
+                    py: 0.35,
+                    px: 1,
+                    borderRadius: '6px',
+                    mb: 0.2,
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    '&:hover .delete-btn': { opacity: 1 },
+                  }}
+                >
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, overflow: 'hidden' }}>
+                    <ListItemIcon sx={{ minWidth: 20, fontSize: '0.85rem' }}>
+                      {note.icon || '📄'}
+                    </ListItemIcon>
+                    <ListItemText
+                      primary={
+                        <Typography variant="body2" noWrap sx={{ fontSize: '0.8rem', fontWeight: selectedNoteId === note.id ? 600 : 400 }}>
+                          {note.title}
+                        </Typography>
+                      }
+                    />
+                  </Box>
+                  <Tooltip title="Delete note">
+                    <IconButton
+                      size="small"
+                      className="delete-btn"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (isReadOnly) {
+                          onRequireAuth?.();
+                        } else if (window.confirm(`Delete note "${note.title}"?`)) {
+                          onDeleteNote?.(note.id);
+                        }
+                      }}
+                      sx={{ p: 0.2, opacity: 0, color: 'text.secondary', '&:hover': { color: 'error.main' } }}
+                    >
+                      <DeleteOutline sx={{ fontSize: 13 }} />
+                    </IconButton>
+                  </Tooltip>
+                </ListItemButton>
+              ))}
+            </List>
+          </Box>
+        )}
       </Box>
 
       {/* Footer Profile & Theme Toggle */}
@@ -387,14 +608,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
             src={currentUser?.avatarUrl}
             sx={{ width: 28, height: 28, bgcolor: currentUser?.color || 'primary.main', fontSize: '0.75rem' }}
           >
-            {currentUser?.name ? currentUser.name[0] : 'U'}
+            {currentUser?.name ? currentUser.name[0] : 'G'}
           </Avatar>
           <Box>
             <Typography variant="caption" sx={{ fontWeight: 700, display: 'block', lineHeight: 1.1 }}>
-              {currentUser?.name || 'Sign In'}
+              {currentUser?.name || 'Guest Mode'}
             </Typography>
             <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '0.68rem', display: 'block' }}>
-              {currentUser?.username ? `@${currentUser.username}` : (currentUser?.email || 'Click to Login')}
+              {currentUser?.username ? `@${currentUser.username}` : (currentUser?.email || 'Click to Sign In')}
             </Typography>
           </Box>
         </Box>
@@ -405,6 +626,142 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </IconButton>
         </Tooltip>
       </Box>
+
+      {/* Dialog: Create Folder */}
+      <Dialog
+        open={newFolderDialogOpen}
+        onClose={() => setNewFolderDialogOpen(false)}
+        maxWidth="xs"
+        fullWidth
+        PaperProps={{ sx: { borderRadius: '14px', p: 1 } }}
+      >
+        <DialogTitle sx={{ fontWeight: 700, fontSize: '1rem', pb: 1 }}>Create New Folder</DialogTitle>
+        <DialogContent>
+          <TextField
+            autoFocus
+            fullWidth
+            size="small"
+            label="Folder Name"
+            placeholder="e.g. Work, Research, Brainstorming"
+            value={newFolderName}
+            onChange={(e) => setNewFolderName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') handleConfirmCreateFolder();
+            }}
+            sx={{ mt: 1 }}
+          />
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={() => setNewFolderDialogOpen(false)} sx={{ textTransform: 'none' }}>
+            Cancel
+          </Button>
+          <Button
+            variant="contained"
+            onClick={handleConfirmCreateFolder}
+            disabled={!newFolderName.trim()}
+            sx={{ textTransform: 'none', borderRadius: '8px' }}
+          >
+            Create
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Dialog: Rename Folder */}
+      <Dialog
+        open={Boolean(renameTarget)}
+        onClose={() => setRenameTarget(null)}
+        maxWidth="xs"
+        fullWidth
+        PaperProps={{ sx: { borderRadius: '14px', p: 1 } }}
+      >
+        <DialogTitle sx={{ fontWeight: 700, fontSize: '1rem', pb: 1 }}>Rename Folder</DialogTitle>
+        <DialogContent>
+          <TextField
+            autoFocus
+            fullWidth
+            size="small"
+            label="Folder Name"
+            value={renameName}
+            onChange={(e) => setRenameName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') handleConfirmRenameFolder();
+            }}
+            sx={{ mt: 1 }}
+          />
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={() => setRenameTarget(null)} sx={{ textTransform: 'none' }}>
+            Cancel
+          </Button>
+          <Button
+            variant="contained"
+            onClick={handleConfirmRenameFolder}
+            disabled={!renameName.trim()}
+            sx={{ textTransform: 'none', borderRadius: '8px' }}
+          >
+            Save
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Folder Action Context Menu */}
+      <Menu
+        anchorEl={folderMenuAnchor?.el}
+        open={Boolean(folderMenuAnchor)}
+        onClose={() => setFolderMenuAnchor(null)}
+        PaperProps={{ sx: { borderRadius: '10px', minWidth: 160 } }}
+      >
+        <MenuItem
+          onClick={() => {
+            const folder = folderMenuAnchor?.folder;
+            setFolderMenuAnchor(null);
+            if (folder) {
+              if (isReadOnly) onRequireAuth?.();
+              else onCreateNote(folder.id);
+            }
+          }}
+          sx={{ fontSize: '0.82rem', gap: 1 }}
+        >
+          <Add sx={{ fontSize: 16 }} />
+          Add Note in Folder
+        </MenuItem>
+        <MenuItem
+          onClick={() => {
+            const folder = folderMenuAnchor?.folder;
+            setFolderMenuAnchor(null);
+            if (folder) {
+              if (isReadOnly) {
+                onRequireAuth?.();
+              } else {
+                setRenameTarget(folder);
+                setRenameName(folder.name);
+              }
+            }
+          }}
+          sx={{ fontSize: '0.82rem', gap: 1 }}
+        >
+          <DriveFileRenameOutline sx={{ fontSize: 16 }} />
+          Rename Folder
+        </MenuItem>
+        <Divider sx={{ my: 0.5 }} />
+        <MenuItem
+          onClick={() => {
+            const folder = folderMenuAnchor?.folder;
+            setFolderMenuAnchor(null);
+            if (folder) {
+              if (isReadOnly) {
+                onRequireAuth?.();
+              } else if (window.confirm(`Delete folder "${folder.name}"? Notes inside will be preserved in Other Notes.`)) {
+                onDeleteFolder?.(folder.id);
+              }
+            }
+          }}
+          sx={{ fontSize: '0.82rem', gap: 1, color: 'error.main' }}
+        >
+          <DeleteOutline sx={{ fontSize: 16 }} />
+          Delete Folder
+        </MenuItem>
+      </Menu>
     </Box>
   );
 };

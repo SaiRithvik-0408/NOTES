@@ -36,6 +36,8 @@ import {
   LockOutlined,
   PersonAddOutlined,
   ArrowBack,
+  CreateNewFolderOutlined,
+  DeleteOutline,
 } from '@mui/icons-material';
 import confetti from 'canvas-confetti';
 import { v4 as uuidv4 } from 'uuid';
@@ -196,23 +198,6 @@ export const App: React.FC = () => {
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
-  // Sharing & Membership State from actual current user
-  const [members, setMembers] = useState<WorkspaceMember[]>([]);
-
-  useEffect(() => {
-    if (currentUser) {
-      setMembers([
-        {
-          userId: currentUser.id,
-          workspaceId: 'ws-default-nexus',
-          role: 'owner',
-          joinedAt: new Date().toISOString(),
-          user: currentUser,
-        },
-      ]);
-    }
-  }, [currentUser]);
-
   // URL Shared Link detection
   const [sharedAccessLevel, setSharedAccessLevel] = useState<'view' | 'edit' | null>(() => {
     if (typeof window !== 'undefined') {
@@ -222,11 +207,12 @@ export const App: React.FC = () => {
     return null;
   });
 
-  // Calculate if active viewer has read-only access
+  // Calculate if active viewer has read-only access (unauthenticated guests or shared view links)
   const isReadOnly = useMemo(() => {
+    if (!currentUser) return true;
     if (sharedAccessLevel === 'view') return true;
     return false;
-  }, [sharedAccessLevel]);
+  }, [currentUser, sharedAccessLevel]);
 
   // Sync & Conflict States
   const [syncStatus, setSyncStatus] = useState<SyncStatus>(mutationQueue.getStatus());
@@ -308,17 +294,68 @@ export const App: React.FC = () => {
   }, [currentNote, folders]);
 
   const currentWorkspace = useMemo(() => {
-    return (
-      workspaces[0] || {
-        id: 'ws-default',
-        name: 'Nexus Workspace',
-        slug: 'nexus',
-        ownerId: 'user-self',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
+    const defaultWs = workspaces[0];
+    if (defaultWs) {
+      return defaultWs;
+    }
+    return {
+      id: 'ws-default-nexus',
+      name: currentUser?.name ? `${currentUser.name}'s Workspace` : 'Personal Workspace',
+      slug: 'personal-workspace',
+      ownerId: currentUser?.id || 'user-self',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+  }, [workspaces, currentUser]);
+
+  // Synchronize workspace name and owner with authenticated user
+  useEffect(() => {
+    if (currentUser && workspaces.length > 0) {
+      const ws = workspaces[0];
+      if (ws.ownerId !== currentUser.id || ws.name.includes('Engineering Workspace')) {
+        const updatedWs: Workspace = {
+          ...ws,
+          name: `${currentUser.name}'s Workspace`,
+          ownerId: currentUser.id,
+          updatedAt: new Date().toISOString(),
+        };
+        db.workspaces.put(updatedWs);
+        setWorkspaces([updatedWs]);
       }
-    );
-  }, [workspaces]);
+    }
+  }, [currentUser, workspaces]);
+
+  // Sharing & Membership State: Current User is always Workspace Owner
+  const [members, setMembers] = useState<WorkspaceMember[]>([]);
+
+  useEffect(() => {
+    if (currentUser) {
+      setMembers([
+        {
+          userId: currentUser.id,
+          workspaceId: currentWorkspace.id,
+          role: 'owner',
+          joinedAt: (currentUser as any)?.createdAt || new Date().toISOString(),
+          user: currentUser,
+        },
+      ]);
+    } else {
+      setMembers([
+        {
+          userId: 'guest-preview',
+          workspaceId: currentWorkspace.id,
+          role: 'viewer',
+          joinedAt: new Date().toISOString(),
+          user: {
+            id: 'guest-preview',
+            name: 'Guest Visitor',
+            email: 'guest@preview.local',
+            color: '#6366F1',
+          },
+        },
+      ]);
+    }
+  }, [currentUser, currentWorkspace.id]);
 
   // Centralized Global Keyboard Shortcuts
   useEffect(() => {
@@ -349,9 +386,83 @@ export const App: React.FC = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [currentNote, isReadOnly]);
 
+  // Folder CRUD Actions
+  const handleCreateFolder = async (name = 'New Folder', icon = '📁') => {
+    if (isReadOnly) {
+      openModal('auth');
+      return;
+    }
+    const newId = `folder-${uuidv4().slice(0, 8)}`;
+    const now = new Date().toISOString();
+    const newFolder: Folder = {
+      id: newId,
+      workspaceId: currentWorkspace.id,
+      name,
+      icon,
+      order: folders.length + 1,
+      createdAt: now,
+      updatedAt: now,
+    };
+    await db.folders.add(newFolder);
+    await mutationQueue.enqueue('folder', newId, 'create', newFolder, 1);
+    setFolders((prev) => [...prev, newFolder]);
+  };
+
+  const handleRenameFolder = async (folderId: string, newName: string) => {
+    if (isReadOnly) {
+      openModal('auth');
+      return;
+    }
+    const target = folders.find((f) => f.id === folderId);
+    if (!target) return;
+    const updated = { ...target, name: newName, updatedAt: new Date().toISOString() };
+    await db.folders.put(updated);
+    await mutationQueue.enqueue('folder', folderId, 'patch', { name: newName });
+    setFolders((prev) => prev.map((f) => (f.id === folderId ? updated : f)));
+  };
+
+  const handleDeleteFolder = async (folderId: string) => {
+    if (isReadOnly) {
+      openModal('auth');
+      return;
+    }
+    await db.folders.delete(folderId);
+    await mutationQueue.enqueue('folder', folderId, 'delete', { id: folderId });
+    // Move any notes inside this folder to uncategorized (folderId: null)
+    const affectedNotes = notes.filter((n) => n.folderId === folderId);
+    for (const note of affectedNotes) {
+      const updatedNote = { ...note, folderId: null, updatedAt: new Date().toISOString() };
+      await db.notes.put(updatedNote);
+      await mutationQueue.enqueue('note', note.id, 'patch', { folderId: null });
+    }
+    setFolders((prev) => prev.filter((f) => f.id !== folderId));
+    setNotes((prev) => prev.map((n) => (n.folderId === folderId ? { ...n, folderId: null } : n)));
+  };
+
   // Note CRUD Actions
+  const handleDeleteNote = async (noteId: string) => {
+    if (isReadOnly) {
+      openModal('auth');
+      return;
+    }
+    await db.notes.delete(noteId);
+    await mutationQueue.enqueue('note', noteId, 'delete', { id: noteId });
+    const remainingNotes = notes.filter((n) => n.id !== noteId);
+    setNotes(remainingNotes);
+    if (selectedNoteId === noteId) {
+      if (remainingNotes.length > 0) {
+        navigateTo('editor', remainingNotes[0].id);
+      } else {
+        setSelectedNoteId(null);
+      }
+    }
+  };
+
   const handleCreateNote = async (folderId?: string) => {
-    if (isReadOnly) return;
+    if (isReadOnly) {
+      openModal('auth');
+      return;
+    }
     const newId = `note-${uuidv4().slice(0, 8)}`;
     const now = new Date().toISOString();
 
@@ -533,11 +644,7 @@ export const App: React.FC = () => {
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
-      {!currentUser ? (
-        <AuthScreen />
-      ) : (
-        <>
-          <Box sx={{ display: 'flex', height: '100vh', width: '100vw', overflow: 'hidden' }}>
+      <Box sx={{ display: 'flex', height: '100vh', width: '100vw', overflow: 'hidden' }}>
         {/* Desktop Sidebar */}
         {!isMobile && (
           <Sidebar
@@ -562,6 +669,12 @@ export const App: React.FC = () => {
             onOpenCommandPalette={() => openModal('palette')}
             onOpenAuthModal={() => openModal('auth')}
             onOpenShareModal={() => openModal('share')}
+            onCreateFolder={handleCreateFolder}
+            onRenameFolder={handleRenameFolder}
+            onDeleteFolder={handleDeleteFolder}
+            onDeleteNote={handleDeleteNote}
+            isReadOnly={isReadOnly}
+            onRequireAuth={() => openModal('auth')}
           />
         )}
 
@@ -608,6 +721,18 @@ export const App: React.FC = () => {
               onOpenShareModal={() => {
                 closeModal('drawer');
                 openModal('share');
+              }}
+              onCreateFolder={(name, icon) => {
+                closeModal('drawer');
+                handleCreateFolder(name, icon);
+              }}
+              onRenameFolder={handleRenameFolder}
+              onDeleteFolder={handleDeleteFolder}
+              onDeleteNote={handleDeleteNote}
+              isReadOnly={isReadOnly}
+              onRequireAuth={() => {
+                closeModal('drawer');
+                openModal('auth');
               }}
             />
           </Drawer>
@@ -684,39 +809,53 @@ export const App: React.FC = () => {
 
             {/* Right Action Icons */}
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              {isReadOnly && (
-                <Chip
-                  icon={<Visibility sx={{ fontSize: 14 }} />}
-                  label="View Only"
+              {/* Guest / Logged-in Actions */}
+              {!currentUser ? (
+                <Button
+                  variant="contained"
                   size="small"
-                  color="warning"
-                  sx={{ height: 24, fontSize: '0.72rem', fontWeight: 700 }}
-                />
+                  startIcon={<PersonAddOutlined sx={{ fontSize: 15 }} />}
+                  onClick={() => openModal('auth')}
+                  sx={{
+                    height: 28,
+                    fontSize: '0.75rem',
+                    fontWeight: 700,
+                    borderRadius: '8px',
+                    textTransform: 'none',
+                    background: 'linear-gradient(135deg, #6366F1, #8B5CF6)',
+                    boxShadow: '0 4px 12px rgba(99, 102, 241, 0.3)',
+                    px: 1.5,
+                  }}
+                >
+                  Sign In to Edit
+                </Button>
+              ) : (
+                <>
+                  <SyncStatusIndicator
+                    status={syncStatus}
+                    onForceSync={handleForceSync}
+                    onToggleSimulatedOffline={handleToggleSimulatedOffline}
+                    isSimulatedOffline={isSimulatedOffline}
+                  />
+
+                  {/* Share Note Button */}
+                  <Button
+                    variant="contained"
+                    size="small"
+                    startIcon={<ShareOutlined sx={{ fontSize: 16 }} />}
+                    onClick={() => openModal('share')}
+                    sx={{
+                      height: 28,
+                      fontSize: '0.75rem',
+                      borderRadius: '6px',
+                      background: 'linear-gradient(135deg, #6366F1, #8B5CF6)',
+                      px: 1.5,
+                    }}
+                  >
+                    Share
+                  </Button>
+                </>
               )}
-
-              <SyncStatusIndicator
-                status={syncStatus}
-                onForceSync={handleForceSync}
-                onToggleSimulatedOffline={handleToggleSimulatedOffline}
-                isSimulatedOffline={isSimulatedOffline}
-              />
-
-              {/* Share Note Button */}
-              <Button
-                variant="contained"
-                size="small"
-                startIcon={<ShareOutlined sx={{ fontSize: 16 }} />}
-                onClick={() => setShareModalOpen(true)}
-                sx={{
-                  height: 28,
-                  fontSize: '0.75rem',
-                  borderRadius: '6px',
-                  background: 'linear-gradient(135deg, #6366F1, #8B5CF6)',
-                  px: 1.5,
-                }}
-              >
-                Share
-              </Button>
 
               {activeView === 'editor' && currentNote && (
                 <>
@@ -728,6 +867,20 @@ export const App: React.FC = () => {
                       color={currentNote.isPinned ? 'primary' : 'default'}
                     >
                       {currentNote.isPinned ? <PushPin fontSize="small" /> : <PushPinOutlined fontSize="small" />}
+                    </IconButton>
+                  </Tooltip>
+                  {/* Delete Note Button */}
+                  <Tooltip title="Delete note">
+                    <IconButton
+                      size="small"
+                      disabled={isReadOnly}
+                      onClick={() => {
+                        if (isReadOnly) openModal('auth');
+                        else if (window.confirm(`Delete "${currentNote.title}"?`)) handleDeleteNote(currentNote.id);
+                      }}
+                      sx={{ '&:hover': { color: 'error.main' } }}
+                    >
+                      <DeleteOutline fontSize="small" />
                     </IconButton>
                   </Tooltip>
                   <Tooltip title="Toggle Inspector Panel">
@@ -743,17 +896,31 @@ export const App: React.FC = () => {
           {/* Read-Only Mode Banner if active */}
           {isReadOnly && (
             <Alert
-              severity="info"
+              severity={!currentUser ? 'info' : 'warning'}
               icon={<Visibility fontSize="inherit" />}
+              action={
+                !currentUser ? (
+                  <Button
+                    color="primary"
+                    size="small"
+                    onClick={() => openModal('auth')}
+                    sx={{ textTransform: 'none', fontWeight: 700, fontSize: '0.75rem' }}
+                  >
+                    Sign In / Register
+                  </Button>
+                ) : undefined
+              }
               sx={{
-                py: 0.5,
+                py: 0.3,
                 px: 2,
                 borderRadius: 0,
-                fontSize: '0.8rem',
+                fontSize: '0.78rem',
                 borderBottom: `1px solid ${theme.palette.divider}`,
               }}
             >
-              You are currently viewing this document with <strong>Read-Only</strong> permissions. Switch to an Editor account or request Edit access to collaborate.
+              {!currentUser
+                ? 'You are viewing this workspace as a guest in Read-Only mode. Sign in or create an account to edit notes, create documents, and collaborate.'
+                : 'You are viewing this document with Read-Only permissions.'}
             </Alert>
           )}
 
@@ -816,6 +983,7 @@ export const App: React.FC = () => {
                   initialContent={currentNote.content}
                   onChange={handleUpdateNoteContent}
                   editable={!isReadOnly}
+                  onRequireAuth={() => openModal('auth')}
                   onNavigateBacklink={(title) => {
                     const match = notes.find((n) => n.title.toLowerCase() === title.toLowerCase());
                     if (match) navigateTo('editor', match.id);
@@ -909,10 +1077,8 @@ export const App: React.FC = () => {
         onUpdateMemberRole={handleUpdateMemberRole}
         onRemoveMember={handleRemoveMember}
       />
-      </>
-    )}
-  </ThemeProvider>
-);
+    </ThemeProvider>
+  );
 };
 
 export default App;

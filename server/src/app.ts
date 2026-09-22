@@ -419,22 +419,7 @@ app.get('/api/v1/auth/me', (req, res) => {
 
 // Workspace Invitations & Members
 const workspaceMembersStore = new Map<string, any[]>();
-workspaceMembersStore.set('ws-default-nexus', [
-  {
-    userId: 'user-alex',
-    workspaceId: 'ws-default-nexus',
-    role: 'owner',
-    joinedAt: new Date().toISOString(),
-    user: { id: 'user-alex', name: 'Alex Rivera', email: 'alex@nexus.internal', color: '#6366F1' },
-  },
-  {
-    userId: 'user-elena',
-    workspaceId: 'ws-default-nexus',
-    role: 'editor',
-    joinedAt: new Date().toISOString(),
-    user: { id: 'user-elena', name: 'Elena Rostova', email: 'elena@nexus.internal', color: '#EC4899' },
-  },
-]);
+workspaceMembersStore.set('ws-default-nexus', []);
 
 app.get('/api/v1/workspaces/:id/members', (req, res) => {
   const members = workspaceMembersStore.get(req.params.id) || [];

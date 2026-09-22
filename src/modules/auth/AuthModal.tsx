@@ -56,6 +56,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ open, onClose }) => {
   // OTP Fields
   const [otpCode, setOtpCode] = useState('');
   const [devOtp, setDevOtp] = useState<string | null>(null);
+  const [verificationToken, setVerificationToken] = useState<string | null>(null);
 
   // States
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -114,6 +115,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ open, onClose }) => {
 
     if (res.success) {
       setDevOtp(res.devOtp || null);
+      if (res.verificationToken) setVerificationToken(res.verificationToken);
       setTab(2); // Go to OTP
     } else {
       setErrorMsg(res.message || 'Registration failed');
@@ -127,6 +129,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ open, onClose }) => {
     const res = await verifyOtp({
       email,
       code: otpCode,
+      verificationToken: verificationToken || undefined,
     });
     setIsLoading(false);
     if (res.success) {

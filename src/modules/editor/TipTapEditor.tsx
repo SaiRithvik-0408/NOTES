@@ -44,6 +44,7 @@ interface TipTapEditorProps {
   onChange: (html: string, plainText: string) => void;
   onNavigateBacklink?: (title: string) => void;
   editable?: boolean;
+  onRequireAuth?: () => void;
 }
 
 interface SlashCommandItem {
@@ -58,6 +59,7 @@ export const TipTapEditor: React.FC<TipTapEditorProps> = ({
   onChange,
   onNavigateBacklink,
   editable = true,
+  onRequireAuth,
 }) => {
   const theme = useTheme();
   const [menuAnchor, setMenuAnchor] = useState<{ top: number; left: number } | null>(null);
@@ -103,6 +105,13 @@ export const TipTapEditor: React.FC<TipTapEditorProps> = ({
       }
     }
   }, [initialContent, editor]);
+
+  // Keep editor editable state synchronized with prop
+  useEffect(() => {
+    if (editor && editor.isEditable !== editable) {
+      editor.setEditable(editable);
+    }
+  }, [editor, editable]);
 
   // Slash commands registry
   const slashCommands: SlashCommandItem[] = [
@@ -204,7 +213,7 @@ export const TipTapEditor: React.FC<TipTapEditorProps> = ({
   return (
     <Box sx={{ position: 'relative', width: '100%' }}>
       {/* Floating Bubble Toolbar */}
-      {editor && (
+      {editor && editable && (
         <BubbleMenu editor={editor}>
           <Paper
             elevation={4}
@@ -270,7 +279,17 @@ export const TipTapEditor: React.FC<TipTapEditorProps> = ({
       )}
 
       {/* Editor Content Area */}
-      <Box className="nexus-editor-content">
+      <Box
+        className="nexus-editor-content"
+        onClick={() => {
+          if (!editable && onRequireAuth) {
+            onRequireAuth();
+          }
+        }}
+        sx={{
+          cursor: !editable ? 'pointer' : 'text',
+        }}
+      >
         <EditorContent editor={editor} />
       </Box>
 
