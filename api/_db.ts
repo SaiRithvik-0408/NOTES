@@ -126,6 +126,15 @@ async function ensurePostgresTable() {
         base_version INT DEFAULT 0,
         applied_at TIMESTAMPTZ DEFAULT NOW()
       );
+
+      CREATE TABLE IF NOT EXISTS nexus_shares (
+        token VARCHAR(255) PRIMARY KEY,
+        note_id VARCHAR(255),
+        workspace_id VARCHAR(255) DEFAULT 'ws-default-nexus',
+        access_level VARCHAR(32) DEFAULT 'view',
+        note_data JSONB,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
     `);
     dbInitialized = true;
   } catch (err: any) {
@@ -462,4 +471,111 @@ export async function getNotes(): Promise<any[]> {
 
   return Array.from(notes.values());
 }
+
+/**
+ * Retrieves a single note by ID from Neon PostgreSQL or local cache
+ */
+export async function getNoteById(noteId: string): Promise<any | null> {
+  if (!noteId) return null;
+
+  if (pool) {
+    try {
+      await ensurePostgresTable();
+      const res = await pool.query(`SELECT * FROM nexus_notes WHERE id = $1 LIMIT 1`, [noteId]);
+      if (res.rows.length > 0) {
+        const row = res.rows[0];
+        return {
+          id: row.id,
+          workspaceId: row.workspace_id,
+          folderId: row.folder_id,
+          title: row.title,
+          content: row.content,
+          plainText: row.plain_text,
+          icon: row.icon,
+          tags: typeof row.tags === 'string' ? JSON.parse(row.tags) : row.tags,
+          isPinned: row.is_pinned,
+          isArchived: row.is_archived,
+          isTrash: row.is_trash,
+          version: row.version,
+          updatedAt: row.updated_at?.toISOString ? row.updated_at.toISOString() : row.updated_at,
+          createdAt: row.created_at?.toISOString ? row.created_at.toISOString() : row.created_at,
+        };
+      }
+    } catch (err: any) {
+      console.error('Error fetching note by id from PostgreSQL:', err.message);
+    }
+  }
+
+  return notes.get(noteId) || null;
+}
+
+export const shareStore = new Map<string, any>();
+
+/**
+ * Saves a shared link record containing the note payload
+ */
+export async function saveShareRecord(record: any): Promise<void> {
+  if (!record || !record.token) return;
+  shareStore.set(record.token, record);
+  if (record.noteId) {
+    shareStore.set(record.noteId, record);
+  }
+
+  if (pool) {
+    try {
+      await ensurePostgresTable();
+      await pool.query(
+        `INSERT INTO nexus_shares (token, note_id, workspace_id, access_level, note_data, created_at)
+         VALUES ($1, $2, $3, $4, $5, NOW())
+         ON CONFLICT (token) DO UPDATE SET
+           note_id = EXCLUDED.note_id,
+           workspace_id = EXCLUDED.workspace_id,
+           access_level = EXCLUDED.access_level,
+           note_data = EXCLUDED.note_data`,
+        [
+          record.token,
+          record.noteId || null,
+          record.workspaceId || 'ws-default-nexus',
+          record.accessLevel || 'view',
+          JSON.stringify(record.noteData || null),
+        ]
+      );
+    } catch (err: any) {
+      console.error('Error saving share record to PostgreSQL:', err.message);
+    }
+  }
+}
+
+/**
+ * Retrieves a shared link record by token or noteId
+ */
+export async function getShareRecord(token: string): Promise<any | null> {
+  if (!token) return null;
+
+  if (pool) {
+    try {
+      await ensurePostgresTable();
+      const res = await pool.query(
+        `SELECT * FROM nexus_shares WHERE token = $1 OR note_id = $1 LIMIT 1`,
+        [token]
+      );
+      if (res.rows.length > 0) {
+        const row = res.rows[0];
+        return {
+          token: row.token,
+          noteId: row.note_id,
+          workspaceId: row.workspace_id,
+          accessLevel: row.access_level,
+          noteData: typeof row.note_data === 'string' ? JSON.parse(row.note_data) : row.note_data,
+          createdAt: row.created_at?.toISOString ? row.created_at.toISOString() : row.created_at,
+        };
+      }
+    } catch (err: any) {
+      console.error('Error fetching share record from PostgreSQL:', err.message);
+    }
+  }
+
+  return shareStore.get(token) || null;
+}
+
 
