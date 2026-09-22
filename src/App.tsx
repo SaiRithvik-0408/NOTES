@@ -54,6 +54,7 @@ import { Sidebar } from './modules/navigation/Sidebar';
 import { TipTapEditor } from './modules/editor/TipTapEditor';
 import { KnowledgeGraph } from './modules/graph/KnowledgeGraph';
 import { Whiteboard } from './modules/whiteboard/Whiteboard';
+import { GamesHub } from './modules/games/GamesHub';
 import { InspectorPanel } from './modules/inspector/InspectorPanel';
 import { CommandPalette } from './components/common/CommandPalette';
 import { ConflictDialog } from './components/common/ConflictDialog';
@@ -85,13 +86,13 @@ export const App: React.FC = () => {
     const params = new URLSearchParams(window.location.search);
     const viewParam = params.get('view');
     const noteParam = params.get('note');
-    const view: 'editor' | 'graph' | 'whiteboard' =
-      viewParam === 'graph' || viewParam === 'whiteboard' ? viewParam : 'editor';
+    const view: 'editor' | 'graph' | 'whiteboard' | 'games' =
+      viewParam === 'graph' || viewParam === 'whiteboard' || viewParam === 'games' ? viewParam : 'editor';
     return { view, noteId: noteParam };
   }, []);
 
   const [selectedNoteId, setSelectedNoteId] = useState<string | null>(initialRoute.noteId);
-  const [activeView, setActiveView] = useState<'editor' | 'graph' | 'whiteboard'>(initialRoute.view);
+  const [activeView, setActiveView] = useState<'editor' | 'graph' | 'whiteboard' | 'games'>(initialRoute.view);
 
   // Inspector & Panels States
   const [inspectorOpen, setInspectorOpen] = useState(true);
@@ -131,7 +132,7 @@ export const App: React.FC = () => {
 
   // History routing function
   const navigateTo = useCallback(
-    (newView: 'editor' | 'graph' | 'whiteboard', noteId?: string | null, replace = false) => {
+    (newView: 'editor' | 'graph' | 'whiteboard' | 'games', noteId?: string | null, replace = false) => {
       if (typeof window === 'undefined') return;
       const params = new URLSearchParams(window.location.search);
       if (newView !== 'editor') {
@@ -186,7 +187,7 @@ export const App: React.FC = () => {
       const urlView = e.state?.view || params.get('view');
       const urlNote = e.state?.noteId || params.get('note');
 
-      const targetView = (urlView === 'graph' || urlView === 'whiteboard') ? urlView : 'editor';
+      const targetView = (urlView === 'graph' || urlView === 'whiteboard' || urlView === 'games') ? urlView : 'editor';
       setActiveView(targetView);
 
       if (urlNote) {
@@ -804,6 +805,11 @@ export const App: React.FC = () => {
                     Visual Canvas
                   </Typography>
                 )}
+                {activeView === 'games' && (
+                  <Typography variant="caption" sx={{ color: '#10B981', fontWeight: 700 }}>
+                    ♟️ 3D Chess & Games
+                  </Typography>
+                )}
               </Breadcrumbs>
             </Box>
 
@@ -1011,6 +1017,11 @@ export const App: React.FC = () => {
               <Box sx={{ width: '100%', height: 'calc(100vh - 120px)' }}>
                 <Whiteboard noteId={currentNote?.id} />
               </Box>
+            )}
+
+            {/* Games Hub / 3D Chess View */}
+            {activeView === 'games' && (
+              <GamesHub />
             )}
           </Box>
         </Box>

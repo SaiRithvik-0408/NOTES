@@ -48,6 +48,7 @@ import {
   DriveFileRenameOutline,
   MoreVert,
   LockOutlined,
+  SportsEsportsOutlined,
 } from '@mui/icons-material';
 import { Note, Folder, Workspace, Tag } from '../../types/note';
 import { SyncStatus } from '../../types/sync';
@@ -60,12 +61,12 @@ interface SidebarProps {
   notes: Note[];
   tags: Tag[];
   selectedNoteId: string | null;
-  activeView: 'editor' | 'graph' | 'whiteboard';
+  activeView: 'editor' | 'graph' | 'whiteboard' | 'games';
   syncStatus: SyncStatus;
   isSimulatedOffline: boolean;
   onSelectNote: (noteId: string) => void;
   onCreateNote: (folderId?: string) => void;
-  onSelectView: (view: 'editor' | 'graph' | 'whiteboard') => void;
+  onSelectView: (view: 'editor' | 'graph' | 'whiteboard' | 'games') => void;
   onToggleTheme: () => void;
   onToggleSimulatedOffline: () => void;
   onForceSync: () => void;
@@ -303,6 +304,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <BrushOutlined fontSize="small" />
           </ListItemIcon>
           <ListItemText primary={<Typography variant="body2" sx={{ fontWeight: 600 }}>Visual Whiteboard</Typography>} />
+        </ListItemButton>
+
+        <ListItemButton
+          selected={activeView === 'games'}
+          onClick={() => onSelectView('games')}
+          sx={{ py: 0.6, px: 1.2, borderRadius: '8px', mb: 0.3 }}
+        >
+          <ListItemIcon sx={{ minWidth: 30, color: '#10B981' }}>
+            <SportsEsportsOutlined fontSize="small" />
+          </ListItemIcon>
+          <ListItemText primary={<Typography variant="body2" sx={{ fontWeight: 600 }}>Games & Chess</Typography>} />
+          <Chip label="3D" size="small" sx={{ height: 18, fontSize: '0.65rem', bgcolor: 'rgba(16, 185, 129, 0.2)', color: '#34D399', fontWeight: 700 }} />
         </ListItemButton>
       </List>
 
