@@ -386,7 +386,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ open, onClose }) => {
               Enter the 6-digit verification code sent to <strong>{email}</strong>
             </Typography>
 
-            {devOtp && (
+            {import.meta.env.DEV && devOtp && (
               <Alert severity="info" sx={{ borderRadius: '10px', fontSize: '0.8rem' }}>
                 Dev OTP Code: <strong>{devOtp}</strong>
               </Alert>

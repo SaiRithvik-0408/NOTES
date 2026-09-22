@@ -213,13 +213,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const data = await res.json();
       return data;
     } catch (err) {
-      console.warn('Backend register unavailable, providing simulated OTP for dev:', err);
-      const devOtp = '123456';
-      return {
-        success: true,
-        message: `Verification code generated for ${req.email}`,
-        devOtp,
-      };
+      if (import.meta.env.DEV) {
+        console.warn('Backend register unavailable, providing simulated OTP for dev:', err);
+        const devOtp = '123456';
+        return {
+          success: true,
+          message: `Verification code generated for ${req.email}`,
+          devOtp,
+        };
+      }
+      return { success: false, message: 'Unable to connect to server. Please try again later.' };
     }
   };
 
@@ -234,11 +237,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const data = await res.json();
       return data;
     } catch (err) {
-      return {
-        success: true,
-        message: `Verification code resent to ${req.email}`,
-        devOtp: '123456',
-      };
+      if (import.meta.env.DEV) {
+        return {
+          success: true,
+          message: `Verification code resent to ${req.email}`,
+          devOtp: '123456',
+        };
+      }
+      return { success: false, message: 'Unable to connect to server. Please try again later.' };
     }
   };
 
@@ -272,8 +278,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return { success: false, message: data.message || 'Verification failed' };
     } catch (err) {
       if (
-        req.code === '123456' ||
-        (pendingRegRef.current && pendingRegRef.current.email.toLowerCase() === req.email.toLowerCase())
+        import.meta.env.DEV &&
+        (req.code === '123456' ||
+        (pendingRegRef.current && pendingRegRef.current.email.toLowerCase() === req.email.toLowerCase()))
       ) {
         const fallbackUser: AuthUser = {
           id: `user-${Date.now()}`,
