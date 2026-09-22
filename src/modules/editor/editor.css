@@ -172,6 +172,18 @@
   border: 1px solid rgba(99, 102, 241, 0.25);
 }
 
+.nexus-callout-ai {
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.12) 0%, rgba(168, 85, 247, 0.1) 100%);
+  border: 1px solid rgba(168, 85, 247, 0.35);
+  box-shadow: 0 4px 16px rgba(168, 85, 247, 0.08);
+}
+
+.nexus-callout-takeaways {
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.1) 0%, rgba(251, 191, 36, 0.06) 100%);
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  box-shadow: 0 4px 16px rgba(245, 158, 11, 0.08);
+}
+
 .nexus-callout-icon {
   margin-right: 12px;
   font-size: 1.3rem;
@@ -181,3 +193,41 @@
 .nexus-callout-content {
   flex: 1;
 }
+
+.nexus-callout-content p {
+  margin: 0 0 0.4rem 0;
+}
+
+.nexus-callout-content ul {
+  margin: 0.2rem 0;
+  padding-left: 1.2rem;
+}
+
+.nexus-callout-content li {
+  margin-bottom: 0.25rem;
+}
+
+/* Voice Dictation Pulse Animation */
+@keyframes mic-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);
+  }
+  70% {
+    box-shadow: 0 0 0 9px rgba(239, 68, 68, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
+  }
+}
+
+.mic-listening {
+  animation: mic-pulse 1.4s infinite cubic-bezier(0.4, 0, 0.6, 1);
+  background-color: rgba(239, 68, 68, 0.2) !important;
+  color: #ef4444 !important;
+}
+
+.ai-assistant-pulse {
+  background: linear-gradient(135deg, #6366f1 0%, #a855f7 100%);
+  color: #ffffff !important;
+}
+
