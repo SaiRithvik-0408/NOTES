@@ -17,6 +17,10 @@ import {
   Divider,
   useTheme,
   Badge,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
 } from '@mui/material';
 import {
   Close,
@@ -30,9 +34,12 @@ import {
   AccessTime,
   PersonOutline,
   FolderOpen,
+  History,
+  VisibilityOutlined,
 } from '@mui/icons-material';
 import { Note, NoteRevision, NoteComment, NoteAttachment, Folder } from '../../types/note';
 import { CommentSection } from '../comments/CommentSection';
+import { formatTimeAgo } from '../../utils/revisionManager';
 
 interface InspectorPanelProps {
   note: Note | null;
@@ -48,6 +55,7 @@ interface InspectorPanelProps {
   onAddReply: (commentId: string, reply: any) => void;
   onRestoreRevision: (revision: NoteRevision) => void;
   onUploadAttachment: (file: File) => void;
+  onCreateSnapshot?: () => void;
 }
 
 export const InspectorPanel = ({
@@ -64,9 +72,12 @@ export const InspectorPanel = ({
   onAddReply,
   onRestoreRevision,
   onUploadAttachment,
+  onCreateSnapshot,
 }: InspectorPanelProps): React.ReactElement | null => {
+
   const theme = useTheme();
   const [tabIndex, setTabIndex] = useState(0);
+  const [previewRevision, setPreviewRevision] = useState<NoteRevision | null>(null);
 
   if (!note) return null;
 
@@ -317,13 +328,35 @@ export const InspectorPanel = ({
         {/* Tab 3: Revisions & History */}
         {tabIndex === 3 && (
           <Box>
-            <Typography variant="caption" sx={{ color: 'text.secondary', textTransform: 'uppercase', fontWeight: 600 }}>
-              Version History ({revisions.length})
-            </Typography>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1.5 }}>
+              <Typography variant="caption" sx={{ color: 'text.secondary', textTransform: 'uppercase', fontWeight: 600 }}>
+                Version History ({revisions.length})
+              </Typography>
+              {onCreateSnapshot && (
+                <Button
+                  size="small"
+                  variant="contained"
+                  onClick={onCreateSnapshot}
+                  startIcon={<History sx={{ fontSize: 15 }} />}
+                  sx={{
+                    textTransform: 'none',
+                    fontWeight: 700,
+                    fontSize: '0.72rem',
+                    py: 0.3,
+                    px: 1.2,
+                    borderRadius: '6px',
+                    background: 'linear-gradient(135deg, #6366F1, #8B5CF6)',
+                  }}
+                >
+                  Save Snapshot
+                </Button>
+              )}
+            </Box>
+
             <List sx={{ mt: 1, p: 0, display: 'flex', flexDirection: 'column', gap: 1 }}>
               {revisions.length === 0 ? (
                 <Typography variant="body2" sx={{ color: 'text.secondary', py: 2, fontSize: '0.85rem' }}>
-                  No previous snapshots saved yet. Snapshots are created before sync merges and major edits.
+                  No previous snapshots saved yet. Click &quot;Save Snapshot&quot; to bookmark the current note state.
                 </Typography>
               ) : (
                 revisions.map((rev: NoteRevision) => (
@@ -334,33 +367,51 @@ export const InspectorPanel = ({
                       p: 1.5,
                       borderRadius: '8px',
                       border: `1px solid ${theme.palette.divider}`,
+                      transition: 'border-color 0.15s ease',
+                      '&:hover': {
+                        borderColor: 'primary.main',
+                      },
                     }}
                   >
                     <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <Typography variant="caption" sx={{ fontWeight: 700 }}>
                         {rev.authorName}
                       </Typography>
-                      <Typography variant="caption" sx={{ color: 'text.muted' }}>
-                        {new Date(rev.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                      </Typography>
+                      <Tooltip title={new Date(rev.createdAt).toLocaleString()}>
+                        <Typography variant="caption" sx={{ color: 'text.muted', fontSize: '0.7rem' }}>
+                          {formatTimeAgo(rev.createdAt)}
+                        </Typography>
+                      </Tooltip>
                     </Box>
-                    <Typography variant="body2" sx={{ fontSize: '0.82rem', my: 0.8, color: 'text.secondary' }}>
+                    <Typography variant="body2" sx={{ fontSize: '0.8rem', my: 0.8, color: 'text.secondary', lineHeight: 1.4 }}>
                       {rev.summary || `Snapshot of "${rev.title}"`}
                     </Typography>
-                    <Button
-                      size="small"
-                      variant="outlined"
-                      onClick={() => onRestoreRevision(rev)}
-                      sx={{ fontSize: '0.72rem', py: 0.2 }}
-                    >
-                      Restore This Version
-                    </Button>
+                    <Box sx={{ display: 'flex', gap: 1, mt: 1 }}>
+                      <Button
+                        size="small"
+                        variant="outlined"
+                        onClick={() => setPreviewRevision(rev)}
+                        startIcon={<VisibilityOutlined sx={{ fontSize: 13 }} />}
+                        sx={{ fontSize: '0.7rem', py: 0.2, px: 1, textTransform: 'none' }}
+                      >
+                        Preview
+                      </Button>
+                      <Button
+                        size="small"
+                        variant="contained"
+                        onClick={() => onRestoreRevision(rev)}
+                        sx={{ fontSize: '0.7rem', py: 0.2, px: 1, textTransform: 'none', fontWeight: 600 }}
+                      >
+                        Restore
+                      </Button>
+                    </Box>
                   </Paper>
                 ))
               )}
             </List>
           </Box>
         )}
+
 
         {/* Tab 4: Attachments */}
         {tabIndex === 4 && (
@@ -436,6 +487,67 @@ export const InspectorPanel = ({
           </Box>
         )}
       </Box>
+
+      {/* Revision Preview Dialog */}
+      <Dialog
+        open={Boolean(previewRevision)}
+        onClose={() => setPreviewRevision(null)}
+        maxWidth="md"
+        fullWidth
+        PaperProps={{
+          sx: {
+            borderRadius: '16px',
+            backgroundColor: theme.palette.mode === 'dark' ? '#0f172a' : '#ffffff',
+            border: `1px solid ${theme.palette.divider}`,
+          },
+        }}
+      >
+        <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', pb: 1 }}>
+          <Box>
+            <Typography variant="h6" sx={{ fontWeight: 700 }}>
+              {previewRevision?.title}
+            </Typography>
+            <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+              Snapshot by {previewRevision?.authorName} • {previewRevision ? formatTimeAgo(previewRevision.createdAt) : ''}
+            </Typography>
+          </Box>
+          <IconButton size="small" onClick={() => setPreviewRevision(null)}>
+            <Close fontSize="small" />
+          </IconButton>
+        </DialogTitle>
+        <DialogContent dividers>
+          <Box
+            sx={{
+              p: 2,
+              borderRadius: '8px',
+              bgcolor: theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)',
+              fontSize: '0.95rem',
+              lineHeight: 1.7,
+              maxHeight: '50vh',
+              overflowY: 'auto',
+            }}
+            dangerouslySetInnerHTML={{ __html: previewRevision?.content || '' }}
+          />
+        </DialogContent>
+        <DialogActions sx={{ p: 2, gap: 1 }}>
+          <Button onClick={() => setPreviewRevision(null)} color="inherit" sx={{ textTransform: 'none' }}>
+            Close
+          </Button>
+          <Button
+            variant="contained"
+            color="primary"
+            onClick={() => {
+              if (previewRevision) {
+                onRestoreRevision(previewRevision);
+                setPreviewRevision(null);
+              }
+            }}
+            sx={{ textTransform: 'none', fontWeight: 700, borderRadius: '8px' }}
+          >
+            Restore This Version
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };

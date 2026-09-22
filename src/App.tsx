@@ -18,6 +18,8 @@ import {
   Alert,
   Menu,
   MenuItem,
+  Avatar,
+  Badge,
 } from '@mui/material';
 import {
   Menu as MenuIcon,
@@ -49,6 +51,9 @@ import confetti from 'canvas-confetti';
 import { v4 as uuidv4 } from 'uuid';
 import { exportNoteToMarkdown, exportNoteToPdf, parseMarkdownFile } from './utils/exportImport';
 import { usePwaInstall } from './utils/pwaInstall';
+import { createNoteSnapshot } from './utils/revisionManager';
+import { useNotePresence } from './utils/presenceManager';
+
 
 
 import { createAppTheme } from './theme/theme';
@@ -233,6 +238,10 @@ export const App: React.FC = () => {
 
   // Native PWA Install & Online Status
   const { isOnline } = usePwaInstall();
+
+  // Real-time Collaborator Presence
+  const { activePeers, broadcastEditing } = useNotePresence(selectedNoteId, currentUser);
+
 
 
   // Note-scoped subdata
@@ -583,6 +592,9 @@ export const App: React.FC = () => {
       // Optimistic in-memory update
       setNotes((prev) => prev.map((n) => (n.id === currentNote.id ? updatedNote : n)));
 
+      // Broadcast typing presence
+      broadcastEditing(true);
+
       // Save locally to IndexedDB
       await db.notes.put(updatedNote);
 
@@ -684,8 +696,29 @@ export const App: React.FC = () => {
     setComments((prev) => prev.map((c) => (c.id === commentId ? { ...c, replies: updatedReplies } : c)));
   };
 
+  const handleCreateSnapshot = async (summary?: string) => {
+    if (!currentNote) return;
+    const rev = await createNoteSnapshot(
+      currentNote,
+      currentUser?.name || 'Current User',
+      currentUser?.id || 'user-self',
+      summary
+    );
+    setRevisions((prev) => [rev, ...prev]);
+    confetti({ particleCount: 30, spread: 50 });
+  };
+
   const handleRestoreRevision = async (rev: NoteRevision) => {
     if (!currentNote || isReadOnly) return;
+    // 1. Snapshot current state before restoring
+    await createNoteSnapshot(
+      currentNote,
+      currentUser?.name || 'Current User',
+      currentUser?.id || 'user-self',
+      `Snapshot before restoring version "${rev.title}"`
+    );
+
+    // 2. Restore revision
     const updated: Note = {
       ...currentNote,
       title: rev.title,
@@ -695,6 +728,10 @@ export const App: React.FC = () => {
     };
     await db.notes.put(updated);
     setNotes((prev) => prev.map((n) => (n.id === currentNote.id ? updated : n)));
+
+    // 3. Reload revisions list
+    const updatedRevs = await db.revisions.where('noteId').equals(currentNote.id).reverse().sortBy('createdAt');
+    setRevisions(updatedRevs);
     confetti({ particleCount: 40, spread: 60 });
   };
 
@@ -916,6 +953,51 @@ export const App: React.FC = () => {
                     onToggleSimulatedOffline={handleToggleSimulatedOffline}
                     isSimulatedOffline={isSimulatedOffline}
                   />
+
+                  {/* Real-Time Collaborator Presence Avatars */}
+                  {activePeers.length > 0 && (
+                    <Box sx={{ display: 'flex', alignItems: 'center', mr: 1 }}>
+                      {activePeers.slice(0, 4).map((peer, idx) => (
+                        <Tooltip
+                          key={peer.clientId}
+                          title={`${peer.userName} is ${peer.isEditing ? 'typing...' : 'viewing'}`}
+                        >
+                          <Badge
+                            overlap="circular"
+                            anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+                            variant="dot"
+                            color={peer.isEditing ? 'warning' : 'success'}
+                            sx={{
+                              ml: idx > 0 ? -1 : 0,
+                              zIndex: 10 - idx,
+                            }}
+                          >
+                            <Avatar
+                              src={peer.userAvatar}
+                              sx={{
+                                width: 26,
+                                height: 26,
+                                fontSize: '0.72rem',
+                                fontWeight: 700,
+                                bgcolor: peer.userColor || '#6366F1',
+                                border: `2px solid ${theme.palette.background.paper}`,
+                              }}
+                            >
+                              {peer.userName[0]}
+                            </Avatar>
+                          </Badge>
+                        </Tooltip>
+                      ))}
+                      {activePeers.length > 4 && (
+                        <Chip
+                          size="small"
+                          label={`+${activePeers.length - 4}`}
+                          sx={{ height: 20, fontSize: '0.65rem', ml: 0.5 }}
+                        />
+                      )}
+                    </Box>
+                  )}
+
 
                   {/* Share Note Button */}
                   <Button
@@ -1193,6 +1275,7 @@ export const App: React.FC = () => {
             onAddReply={handleAddReply}
             onRestoreRevision={handleRestoreRevision}
             onUploadAttachment={handleUploadAttachment}
+            onCreateSnapshot={() => handleCreateSnapshot()}
           />
         )}
       </Box>
