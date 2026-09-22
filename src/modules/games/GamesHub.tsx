@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Box, Typography, Paper, Chip, Button, Grid, useTheme } from '@mui/material';
 import { SportsEsports, ViewInAr, Star, ExtensionOutlined, Grid4x4, RocketLaunch } from '@mui/icons-material';
 import { ChessGame } from './chess/ChessGame';
+import { Game2048View } from './puzzle2048/Game2048View';
 
 export const GamesHub: React.FC = () => {
   const theme = useTheme();
@@ -109,6 +110,8 @@ export const GamesHub: React.FC = () => {
       {/* Active Game Display */}
       {selectedGame === 'chess' ? (
         <ChessGame />
+      ) : selectedGame === '2048' ? (
+        <Game2048View />
       ) : (
         <Paper
           elevation={0}
@@ -124,10 +127,10 @@ export const GamesHub: React.FC = () => {
         >
           <ExtensionOutlined sx={{ fontSize: 48, color: 'primary.main', mb: 2 }} />
           <Typography variant="h5" sx={{ fontWeight: 800, mb: 1 }}>
-            {selectedGame === '2048' ? '2048 Puzzle' : 'Sudoku Master'}
+            Sudoku Master
           </Typography>
           <Typography variant="body2" sx={{ color: 'text.secondary', mb: 3 }}>
-            This arcade game is queued in development! In the meantime, enjoy full interactive 3D Chess with custom piece logic and AI Bot.
+            Sudoku Master is currently queued in Task 3 of development! In the meantime, enjoy 3D Chess and the newly launched 2048 Puzzle.
           </Typography>
           <Button
             variant="contained"

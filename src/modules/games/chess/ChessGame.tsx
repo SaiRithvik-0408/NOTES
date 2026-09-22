@@ -14,6 +14,7 @@ import {
   DialogContent,
   Stack,
   CircularProgress,
+  Alert,
   useTheme,
 } from '@mui/material';
 import {
@@ -28,6 +29,8 @@ import {
   GridOn,
   AutoAwesome,
   SwapVert,
+  LightbulbOutlined,
+  TipsAndUpdates,
 } from '@mui/icons-material';
 import {
   AiDifficulty,
@@ -81,6 +84,8 @@ export const ChessGame: React.FC = () => {
   const [gameState, setGameState] = useState<GameState>(() => createInitialGameState());
   const [historyStack, setHistoryStack] = useState<GameState[]>([]);
   const [isAiThinking, setIsAiThinking] = useState(false);
+  const [activeHint, setActiveHint] = useState<Move | null>(null);
+  const [hintExplanation, setHintExplanation] = useState<string | null>(null);
 
   // Promotion Picker State
   const [pendingPromotion, setPendingPromotion] = useState<{
@@ -158,6 +163,8 @@ export const ChessGame: React.FC = () => {
           setHistoryStack((prev) => [...prev, gameState]);
           const nextState = applyMove(gameState, legalMove);
           setGameState(nextState);
+          setActiveHint(null);
+          setHintExplanation(null);
           triggerMoveSound(legalMove, nextState.isCheck, nextState.isCheckmate);
           return;
         }
@@ -183,10 +190,61 @@ export const ChessGame: React.FC = () => {
           selectedPos: null,
           legalMoves: [],
         }));
+        setActiveHint(null);
+        setHintExplanation(null);
       }
     },
     [gameState, isAiThinking, triggerMoveSound]
   );
+
+  // Generate tactical AI hint
+  const handleGetHint = useCallback(() => {
+    if (isAiThinking || gameState.isCheckmate || gameState.isStalemate) return;
+    const best = getBestMove(gameState, 'hard');
+    if (!best) return;
+
+    let explanation = 'Solid positional development.';
+    if (best.isCastling) {
+      explanation = 'Castle king to safety and connect your rooks.';
+    } else if (best.captured) {
+      const pName =
+        best.captured.type === 'q'
+          ? 'Queen'
+          : best.captured.type === 'r'
+          ? 'Rook'
+          : best.captured.type === 'b'
+          ? 'Bishop'
+          : best.captured.type === 'n'
+          ? 'Knight'
+          : 'Pawn';
+      explanation = `Capture opponent's ${pName} on ${best.san?.slice(-2) || 'target'}.`;
+    } else if (best.piece.type === 'n') {
+      explanation = 'Deploy knight towards the center for strategic board control.';
+    } else if (best.piece.type === 'b') {
+      explanation = 'Activate bishop along an open diagonal.';
+    } else if (best.piece.type === 'r') {
+      explanation = 'Control key open file with rook.';
+    } else if (best.piece.type === 'q') {
+      explanation = 'Reposition queen for attacking pressure.';
+    } else if (best.piece.type === 'p') {
+      explanation = 'Push pawn to claim spatial center advantage.';
+    }
+
+    setActiveHint(best);
+    setHintExplanation(explanation);
+
+    const moves = getLegalMoves(
+      best.from,
+      gameState.board,
+      gameState.enPassantTarget,
+      gameState.castlingRights
+    );
+    setGameState((prev) => ({
+      ...prev,
+      selectedPos: best.from,
+      legalMoves: moves,
+    }));
+  }, [gameState, isAiThinking]);
 
   // Pawn Promotion Choice Selection
   const handleChoosePromotion = (promoType: PieceType) => {
@@ -258,6 +316,8 @@ export const ChessGame: React.FC = () => {
     setGameState(createInitialGameState());
     setHistoryStack([]);
     setPendingPromotion(null);
+    setActiveHint(null);
+    setHintExplanation(null);
   };
 
   return (
@@ -364,6 +424,28 @@ export const ChessGame: React.FC = () => {
             </Box>
           </Paper>
 
+          {/* AI Hint Explanation Alert */}
+          {hintExplanation && activeHint && (
+            <Alert
+              icon={<TipsAndUpdates sx={{ color: '#10B981' }} />}
+              severity="success"
+              onClose={() => {
+                setActiveHint(null);
+                setHintExplanation(null);
+              }}
+              sx={{
+                borderRadius: '12px',
+                fontSize: '0.8rem',
+                fontWeight: 600,
+                bgcolor: isDark ? 'rgba(16, 185, 129, 0.15)' : 'rgba(16, 185, 129, 0.1)',
+                color: isDark ? '#A7F3D0' : '#065F46',
+                border: '1px solid rgba(16, 185, 129, 0.3)',
+              }}
+            >
+              💡 <strong>AI Hint ({activeHint.san}):</strong> {hintExplanation}
+            </Alert>
+          )}
+
           {/* Interactive Board View (3D or 2D) */}
           {uiTheme === '2d-classic' ? (
             <Chess2DView
@@ -372,6 +454,7 @@ export const ChessGame: React.FC = () => {
               selectedPos={gameState.selectedPos}
               legalMoves={gameState.legalMoves}
               lastMove={lastMove}
+              activeHint={activeHint}
               isCheck={gameState.isCheck}
               isFlipped={isFlipped}
               onSelectSquare={handleSelectSquare}
@@ -383,6 +466,7 @@ export const ChessGame: React.FC = () => {
               selectedPos={gameState.selectedPos}
               legalMoves={gameState.legalMoves}
               lastMove={lastMove}
+              activeHint={activeHint}
               isCheck={gameState.isCheck}
               isFlipped={isFlipped}
               themeMode={uiTheme}
@@ -519,7 +603,7 @@ export const ChessGame: React.FC = () => {
               </Box>
             )}
 
-            {/* Action Buttons: Undo, Flip, Sound, New Game */}
+            {/* Action Buttons: Undo, Hint, Flip, Sound, New Game */}
             <Stack direction="row" spacing={1} sx={{ mt: 0.5 }}>
               <Button
                 variant="outlined"
@@ -531,6 +615,29 @@ export const ChessGame: React.FC = () => {
               >
                 Undo
               </Button>
+
+              <Button
+                variant="outlined"
+                size="small"
+                startIcon={<LightbulbOutlined sx={{ color: '#10B981' }} />}
+                onClick={handleGetHint}
+                disabled={isAiThinking || gameState.isCheckmate || gameState.isStalemate}
+                sx={{
+                  flex: 1,
+                  textTransform: 'none',
+                  fontWeight: 700,
+                  borderRadius: '8px',
+                  borderColor: 'rgba(16, 185, 129, 0.4)',
+                  color: '#10B981',
+                  '&:hover': {
+                    borderColor: '#10B981',
+                    bgcolor: 'rgba(16, 185, 129, 0.08)',
+                  },
+                }}
+              >
+                Hint
+              </Button>
+
               <Tooltip title="Flip Board Perspective">
                 <IconButton
                   size="small"

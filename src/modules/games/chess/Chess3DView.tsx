@@ -12,6 +12,7 @@ interface Chess3DViewProps {
   selectedPos: Position | null;
   legalMoves: Move[];
   lastMove: Move | null;
+  activeHint?: Move | null;
   isCheck: boolean;
   isFlipped: boolean;
   themeMode: UITheme;
@@ -264,6 +265,7 @@ interface Board3DProps {
   selectedPos: Position | null;
   legalMoves: Move[];
   lastMove: Move | null;
+  activeHint?: Move | null;
   isCheck: boolean;
   themeMode: UITheme;
   onSelectSquare: (pos: Position) => void;
@@ -275,6 +277,7 @@ const Board3D: React.FC<Board3DProps> = ({
   selectedPos,
   legalMoves,
   lastMove,
+  activeHint,
   isCheck,
   themeMode,
   onSelectSquare,
@@ -321,6 +324,8 @@ const Board3D: React.FC<Board3DProps> = ({
           const piece = board[r][c];
 
           const isSelected = selectedPos && selectedPos[0] === r && selectedPos[1] === c;
+          const isHintFrom = activeHint && activeHint.from[0] === r && activeHint.from[1] === c;
+          const isHintTo = activeHint && activeHint.to[0] === r && activeHint.to[1] === c;
           const isHovered = hoveredPos && hoveredPos[0] === r && hoveredPos[1] === c;
           const legalTarget = legalMoves.find((m) => m.to[0] === r && m.to[1] === c);
           const isLastMove =
@@ -337,6 +342,10 @@ const Board3D: React.FC<Board3DProps> = ({
             tileColor = '#F59E0B';
             tileEmissive = '#F59E0B';
             tileEmissiveIntensity = 0.5;
+          } else if (isHintFrom || isHintTo) {
+            tileColor = isHintFrom ? '#10B981' : '#34D399';
+            tileEmissive = '#10B981';
+            tileEmissiveIntensity = 0.8;
           } else if (isKingInCheck) {
             tileColor = '#EF4444';
             tileEmissive = '#EF4444';
@@ -430,6 +439,7 @@ export const Chess3DView: React.FC<Chess3DViewProps> = ({
   selectedPos,
   legalMoves,
   lastMove,
+  activeHint,
   isCheck,
   isFlipped,
   themeMode,
@@ -506,6 +516,7 @@ export const Chess3DView: React.FC<Chess3DViewProps> = ({
           selectedPos={selectedPos}
           legalMoves={legalMoves}
           lastMove={lastMove}
+          activeHint={activeHint}
           isCheck={isCheck}
           themeMode={themeMode}
           onSelectSquare={onSelectSquare}

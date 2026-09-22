@@ -8,6 +8,7 @@ interface Chess2DViewProps {
   selectedPos: Position | null;
   legalMoves: Move[];
   lastMove: Move | null;
+  activeHint?: Move | null;
   isCheck: boolean;
   isFlipped: boolean;
   onSelectSquare: (pos: Position) => void;
@@ -39,6 +40,7 @@ export const Chess2DView: React.FC<Chess2DViewProps> = ({
   selectedPos,
   legalMoves,
   lastMove,
+  activeHint,
   isCheck,
   isFlipped,
   onSelectSquare,
@@ -98,6 +100,8 @@ export const Chess2DView: React.FC<Chess2DViewProps> = ({
           const isLight = (r + c) % 2 === 0;
 
           const isSelected = selectedPos && selectedPos[0] === r && selectedPos[1] === c;
+          const isHintFrom = activeHint && activeHint.from[0] === r && activeHint.from[1] === c;
+          const isHintTo = activeHint && activeHint.to[0] === r && activeHint.to[1] === c;
           const legalTarget = legalMoves.find((m) => m.to[0] === r && m.to[1] === c);
           const isLastMoveFrom = lastMove && lastMove.from[0] === r && lastMove.from[1] === c;
           const isLastMoveTo = lastMove && lastMove.to[0] === r && lastMove.to[1] === c;
@@ -107,6 +111,8 @@ export const Chess2DView: React.FC<Chess2DViewProps> = ({
           let squareBg = isLight ? lightSquareColor : darkSquareColor;
           if (isSelected) {
             squareBg = '#FBBF24'; // Amber highlight
+          } else if (isHintFrom || isHintTo) {
+            squareBg = isHintFrom ? '#10B981' : '#34D399'; // Emerald green hint highlight
           } else if (isKingCheck) {
             squareBg = '#EF4444'; // Red check danger
           } else if (isLastMoveFrom || isLastMoveTo) {
