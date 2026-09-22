@@ -1,5 +1,6 @@
 // Server database adapter supporting in-memory storage, persistent disk cache,
 // and PostgreSQL compatibility for production deployment.
+import 'dotenv/config';
 import fs from 'fs';
 import path from 'path';
 import pg from 'pg';
@@ -88,14 +89,17 @@ class ServerDatabase {
     }
   }
 
+  private isEnsuringTable = false;
+
   private async initPostgres() {
     if (!DB_URL) return;
     try {
       this.pool = new Pool({
         connectionString: DB_URL,
         ssl: DB_URL.includes('localhost') ? false : { rejectUnauthorized: false },
-        max: 5,
-        connectionTimeoutMillis: 5000,
+        max: 10,
+        connectionTimeoutMillis: 15000,
+        idleTimeoutMillis: 30000,
       });
 
       this.pool.on('error', (err) => {
@@ -110,7 +114,8 @@ class ServerDatabase {
   }
 
   public async ensurePostgresTable() {
-    if (!this.pool || this.dbInitialized) return;
+    if (!this.pool || this.dbInitialized || this.isEnsuringTable) return;
+    this.isEnsuringTable = true;
     try {
       await this.pool.query(`
         CREATE TABLE IF NOT EXISTS nexus_users (
@@ -128,6 +133,8 @@ class ServerDatabase {
       this.dbInitialized = true;
     } catch (err: any) {
       console.warn('[serverDb] Error ensuring PostgreSQL nexus_users table:', err.message);
+    } finally {
+      this.isEnsuringTable = false;
     }
   }
 

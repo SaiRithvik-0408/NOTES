@@ -65,14 +65,16 @@ function persistUsersToDisk() {
 // 2. PostgreSQL Connection Pool (if DATABASE_URL is configured)
 let pool: pg.Pool | null = null;
 let dbInitialized = false;
+let isEnsuringTable = false;
 
 if (DB_URL) {
   try {
     pool = new Pool({
       connectionString: DB_URL,
       ssl: DB_URL.includes('localhost') ? false : { rejectUnauthorized: false },
-      max: 5,
-      connectionTimeoutMillis: 5000,
+      max: 10,
+      connectionTimeoutMillis: 15000,
+      idleTimeoutMillis: 30000,
     });
   } catch (e) {
     console.error('Failed to initialize PostgreSQL pool:', e);
@@ -80,7 +82,8 @@ if (DB_URL) {
 }
 
 async function ensurePostgresTable() {
-  if (!pool || dbInitialized) return;
+  if (!pool || dbInitialized || isEnsuringTable) return;
+  isEnsuringTable = true;
   try {
     await pool.query(`
       CREATE TABLE IF NOT EXISTS nexus_users (
@@ -98,6 +101,8 @@ async function ensurePostgresTable() {
     dbInitialized = true;
   } catch (err: any) {
     console.error('Error ensuring PostgreSQL nexus_users table:', err.message);
+  } finally {
+    isEnsuringTable = false;
   }
 }
 
