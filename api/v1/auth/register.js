@@ -1,6 +1,7 @@
-import { users, otpStore } from '../../_db.js';
+import { users, otpStore, generateVerificationToken } from '../../_db.js';
+import { sendOtpEmail } from '../../_mailer.js';
 
-export default function handler(req, res) {
+export default async function handler(req, res) {
   res.setHeader('Content-Type', 'application/json');
 
   if (req.method !== 'POST') {
@@ -46,22 +47,34 @@ export default function handler(req, res) {
   }
 
   const code = Math.floor(100000 + Math.random() * 900000).toString();
-  const expiresAt = Date.now() + 10 * 60 * 1000;
+  const userData = {
+    name: name.trim(),
+    username: normalizedUsername,
+    email: normalizedEmail,
+    password,
+  };
 
+  // Generate stateless encrypted verification token (guaranteed to survive any serverless cold start / routing)
+  const verificationToken = generateVerificationToken(normalizedEmail, code, userData);
+
+  // In-memory challenge store (for local/single-process fallback)
   otpStore.set(normalizedEmail, {
     code,
-    expiresAt,
-    userData: {
-      name: name.trim(),
-      username: normalizedUsername,
-      email: normalizedEmail,
-      password,
-    },
+    expiresAt: Date.now() + 10 * 60 * 1000,
+    userData,
   });
+
+  // Attempt real email delivery if SMTP credentials configured
+  const mailResult = await sendOtpEmail(normalizedEmail, code, name.trim());
 
   return res.status(200).json({
     success: true,
-    message: `Verification code sent to ${normalizedEmail}`,
+    message: mailResult.sent
+      ? `A 6-digit verification code has been delivered to ${normalizedEmail}`
+      : `Verification code generated for ${normalizedEmail}`,
     devOtp: code,
+    verificationToken,
+    emailSent: mailResult.sent,
+    mailReason: mailResult.reason || mailResult.error,
   });
 }

@@ -3,6 +3,35 @@ import http from 'http';
 import cors from 'cors';
 import { serverDb } from './db';
 import { ServerSyncPushRequest, ServerSyncPullResponse } from './types';
+import crypto from 'crypto';
+
+const AUTH_SECRET = process.env.JWT_SECRET || 'nexus-secret-key-2026-auth-gate';
+
+function generateVerificationToken(email: string, code: string, userData: any = null) {
+  const expiresAt = Date.now() + 10 * 60 * 1000;
+  const payload = JSON.stringify({ email: email.toLowerCase(), code: String(code).trim(), userData, expiresAt });
+  const iv = crypto.randomBytes(16);
+  const cipher = crypto.createCipheriv('aes-256-cbc', crypto.createHash('sha256').update(AUTH_SECRET).digest(), iv);
+  let encrypted = cipher.update(payload, 'utf8', 'hex');
+  encrypted += cipher.final('hex');
+  return `${iv.toString('hex')}:${encrypted}`;
+}
+
+function decryptVerificationToken(token: string) {
+  if (!token || typeof token !== 'string') return null;
+  try {
+    const parts = token.split(':');
+    if (parts.length !== 2) return null;
+    const [ivHex, encrypted] = parts;
+    const iv = Buffer.from(ivHex, 'hex');
+    const decipher = crypto.createDecipheriv('aes-256-cbc', crypto.createHash('sha256').update(AUTH_SECRET).digest(), iv);
+    let decrypted = decipher.update(encrypted, 'hex', 'utf8');
+    decrypted += decipher.final('utf8');
+    return JSON.parse(decrypted);
+  } catch {
+    return null;
+  }
+}
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -142,12 +171,14 @@ app.post('/api/v1/auth/send-otp', (req, res) => {
     userData: existingOtp?.userData,
   });
 
+  const verificationToken = generateVerificationToken(normalizedEmail, code, existingOtp?.userData);
   console.log(`🔐 [Nexus Auth] OTP for ${normalizedEmail}: ${code}`);
 
   res.json({
     success: true,
     message: `Verification code sent to ${normalizedEmail}`,
     devOtp: code, // Dev helper for instant testing
+    verificationToken,
   });
 });
 
@@ -196,16 +227,19 @@ app.post('/api/v1/auth/register', (req, res) => {
   // Generate 6-digit OTP
   const code = Math.floor(100000 + Math.random() * 900000).toString();
   const expiresAt = Date.now() + 10 * 60 * 1000;
+  const userData = {
+    name: name.trim(),
+    username: normalizedUsername,
+    email: normalizedEmail,
+    password,
+  };
+
+  const verificationToken = generateVerificationToken(normalizedEmail, code, userData);
 
   serverDb.otpStore.set(normalizedEmail, {
     code,
     expiresAt,
-    userData: {
-      name: name.trim(),
-      username: normalizedUsername,
-      email: normalizedEmail,
-      password,
-    },
+    userData,
   });
 
   console.log(`🔐 [Nexus Auth] New Registration OTP for ${normalizedEmail} (${normalizedUsername}): ${code}`);
@@ -214,45 +248,58 @@ app.post('/api/v1/auth/register', (req, res) => {
     success: true,
     message: `Verification code sent to ${normalizedEmail}`,
     devOtp: code,
+    verificationToken,
   });
 });
 
 // Verify OTP & finalize registration / login
 app.post('/api/v1/auth/verify-otp', (req, res) => {
-  const { email, code } = req.body;
+  const { email, code, verificationToken } = req.body;
   if (!email || !code) {
     return res.status(400).json({ success: false, message: 'Email and verification code are required' });
   }
 
   const normalizedEmail = email.trim().toLowerCase();
-  const challenge = serverDb.otpStore.get(normalizedEmail);
+  const inputCode = String(code).trim();
+  let verified = false;
+  let userData: any = null;
 
-  if (!challenge) {
-    return res.status(400).json({ success: false, message: 'No pending verification found. Please request a new code.' });
+  if (verificationToken) {
+    const tokenData = decryptVerificationToken(verificationToken);
+    if (tokenData && tokenData.email.toLowerCase() === normalizedEmail && tokenData.code === inputCode) {
+      if (Date.now() <= tokenData.expiresAt) {
+        verified = true;
+        userData = tokenData.userData;
+      }
+    }
   }
 
-  if (Date.now() > challenge.expiresAt) {
-    serverDb.otpStore.delete(normalizedEmail);
-    return res.status(400).json({ success: false, message: 'Verification code has expired. Please request a new one.' });
+  if (!verified) {
+    const challenge = serverDb.otpStore.get(normalizedEmail);
+    if (challenge && challenge.code === inputCode && Date.now() <= challenge.expiresAt) {
+      verified = true;
+      userData = challenge.userData;
+      serverDb.otpStore.delete(normalizedEmail);
+    }
   }
 
-  if (challenge.code !== code.trim()) {
-    return res.status(400).json({ success: false, message: 'Invalid verification code. Please check and try again.' });
+  if (!verified) {
+    return res.status(400).json({ success: false, message: 'Invalid or expired verification code. Please check and try again.' });
   }
 
   // Code verified! If pending registration exists, finalize user creation:
   let userRecord: any = null;
-  if (challenge.userData) {
+  if (userData) {
     const newUserId = `user-${Date.now()}`;
     const colors = ['#6366F1', '#EC4899', '#10B981', '#3B82F6', '#8B5CF6', '#F59E0B'];
     const randomColor = colors[Math.floor(Math.random() * colors.length)];
 
     userRecord = {
       id: newUserId,
-      username: challenge.userData.username,
-      name: challenge.userData.name,
-      email: challenge.userData.email,
-      password: challenge.userData.password,
+      username: userData.username,
+      name: userData.name,
+      email: userData.email,
+      password: userData.password,
       color: randomColor,
       isVerified: true,
       createdAt: new Date().toISOString(),

@@ -64,6 +64,8 @@ export const AuthScreen: React.FC = () => {
   // OTP Verification States
   const [otpDigits, setOtpDigits] = useState<string[]>(['', '', '', '', '', '']);
   const [devOtpCode, setDevOtpCode] = useState<string | null>(null);
+  const [verificationToken, setVerificationToken] = useState<string | null>(null);
+  const [emailSent, setEmailSent] = useState<boolean | null>(null);
   const [otpTimer, setOtpTimer] = useState<number>(60);
   const [isResending, setIsResending] = useState(false);
   const otpInputRefs = useRef<(HTMLInputElement | null)[]>([]);
@@ -168,7 +170,13 @@ export const AuthScreen: React.FC = () => {
 
     if (res.success) {
       setDevOtpCode(res.devOtp || null);
-      setSuccessMsg(`A 6-digit verification code was sent to ${regEmail}`);
+      setVerificationToken(res.verificationToken || null);
+      setEmailSent(res.emailSent ?? null);
+      setSuccessMsg(
+        res.emailSent
+          ? `A 6-digit verification code has been emailed to ${regEmail}`
+          : `Verification code generated for ${regEmail}. Use code below to activate.`
+      );
       setAuthMode('otp');
       setOtpTimer(60);
       setOtpDigits(['', '', '', '', '', '']);
@@ -233,6 +241,7 @@ export const AuthScreen: React.FC = () => {
     const res = await verifyOtp({
       email: regEmail,
       code,
+      verificationToken: verificationToken || undefined,
     });
     setIsLoading(false);
 
@@ -252,12 +261,21 @@ export const AuthScreen: React.FC = () => {
       name: regName,
       username: regUsername,
       type: 'register',
+      verificationToken: verificationToken || undefined,
     });
     setIsResending(false);
 
     if (res.success) {
       setDevOtpCode(res.devOtp || null);
-      setSuccessMsg(`Fresh verification code sent to ${regEmail}`);
+      if (res.verificationToken) {
+        setVerificationToken(res.verificationToken);
+      }
+      setEmailSent(res.emailSent ?? null);
+      setSuccessMsg(
+        res.emailSent
+          ? `Fresh verification code delivered to ${regEmail}`
+          : `New verification code generated for ${regEmail}`
+      );
       setOtpTimer(60);
     } else {
       setErrorMsg(res.message || 'Failed to resend code');
@@ -861,7 +879,16 @@ export const AuthScreen: React.FC = () => {
               Verify Your Email
             </Typography>
             <Typography variant="body2" sx={{ color: '#94A3B8', mb: 2, fontSize: '0.85rem' }}>
-              We sent a 6-digit verification code to <strong style={{ color: '#E2E8F0' }}>{regEmail}</strong>
+              {emailSent ? (
+                <>We sent a 6-digit verification code to <strong style={{ color: '#E2E8F0' }}>{regEmail}</strong></>
+              ) : (
+                <>
+                  Verification challenge created for <strong style={{ color: '#E2E8F0' }}>{regEmail}</strong>.
+                  <span style={{ display: 'block', color: '#94A3B8', fontSize: '0.76rem', marginTop: '4px' }}>
+                    (Live SMTP delivery is not active. Please use the Dev Mode OTP code below to verify immediately)
+                  </span>
+                </>
+              )}
             </Typography>
 
             {/* Dev helper callout */}

@@ -17,11 +17,13 @@ export interface SendOtpRequest {
   name?: string;
   username?: string;
   type: 'register' | 'login' | 'reset';
+  verificationToken?: string;
 }
 
 export interface VerifyOtpRequest {
   email: string;
   code: string;
+  verificationToken?: string;
 }
 
 export interface AuthResponse {
@@ -30,6 +32,8 @@ export interface AuthResponse {
   user?: AuthUser;
   message?: string;
   devOtp?: string; // Provided in local dev environment for easy testing
+  verificationToken?: string;
+  emailSent?: boolean;
 }
 
 export interface ShareLink {

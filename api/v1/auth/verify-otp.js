@@ -1,4 +1,4 @@
-import { users, otpStore } from '../../_db.js';
+import { users, otpStore, decryptVerificationToken } from '../../_db.js';
 
 export default function handler(req, res) {
   res.setHeader('Content-Type', 'application/json');
@@ -7,39 +7,68 @@ export default function handler(req, res) {
     return res.status(405).json({ success: false, message: 'Method not allowed' });
   }
 
-  const { email, code } = req.body || {};
+  const { email, code, verificationToken } = req.body || {};
   if (!email || !code) {
     return res.status(400).json({ success: false, message: 'Email and verification code are required' });
   }
 
-  const normalizedEmail = email.trim().toLowerCase();
-  const challenge = otpStore.get(normalizedEmail);
+  const normalizedEmail = String(email).trim().toLowerCase();
+  const inputCode = String(code).trim();
 
-  if (!challenge) {
-    return res.status(400).json({ success: false, message: 'No pending verification found. Please request a new code.' });
+  let verified = false;
+  let userData = null;
+
+  // 1. Try stateless cryptographic verification token first (works seamlessly on Vercel across different serverless instances)
+  if (verificationToken) {
+    const tokenData = decryptVerificationToken(verificationToken);
+    if (tokenData) {
+      if (Date.now() > tokenData.expiresAt) {
+        return res.status(400).json({ success: false, message: 'Verification code has expired. Please request a new code.' });
+      }
+
+      if (tokenData.email.toLowerCase() === normalizedEmail && tokenData.code === inputCode) {
+        verified = true;
+        userData = tokenData.userData;
+      }
+    }
   }
 
-  if (Date.now() > challenge.expiresAt) {
-    otpStore.delete(normalizedEmail);
-    return res.status(400).json({ success: false, message: 'Verification code has expired. Please request a new one.' });
+  // 2. Fallback to in-memory challenge (if same process/instance)
+  if (!verified) {
+    const challenge = otpStore.get(normalizedEmail);
+    if (challenge) {
+      if (Date.now() > challenge.expiresAt) {
+        otpStore.delete(normalizedEmail);
+        return res.status(400).json({ success: false, message: 'Verification code has expired. Please request a new one.' });
+      }
+
+      if (challenge.code === inputCode) {
+        verified = true;
+        userData = challenge.userData;
+        otpStore.delete(normalizedEmail);
+      }
+    }
   }
 
-  if (challenge.code !== String(code).trim()) {
-    return res.status(400).json({ success: false, message: 'Invalid verification code. Please check and try again.' });
+  if (!verified) {
+    return res.status(400).json({
+      success: false,
+      message: 'Invalid or expired verification code. Please check and try again.',
+    });
   }
 
+  // Create or activate user
   let userRecord = null;
-  if (challenge.userData) {
+  if (userData) {
     const newUserId = `user-${Date.now()}`;
     const colors = ['#6366F1', '#EC4899', '#10B981', '#3B82F6', '#8B5CF6', '#F59E0B'];
     const randomColor = colors[Math.floor(Math.random() * colors.length)];
 
     userRecord = {
       id: newUserId,
-      username: challenge.userData.username,
-      name: challenge.userData.name,
-      email: challenge.userData.email,
-      password: challenge.userData.password,
+      username: userData.username || normalizedEmail.split('@')[0],
+      name: userData.name || 'User',
+      email: normalizedEmail,
       color: randomColor,
       isVerified: true,
       createdAt: new Date().toISOString(),
@@ -52,13 +81,19 @@ export default function handler(req, res) {
     );
     if (userRecord) {
       userRecord.isVerified = true;
+    } else {
+      const newUserId = `user-${Date.now()}`;
+      userRecord = {
+        id: newUserId,
+        username: normalizedEmail.split('@')[0],
+        name: normalizedEmail.split('@')[0],
+        email: normalizedEmail,
+        color: '#6366F1',
+        isVerified: true,
+        createdAt: new Date().toISOString(),
+      };
+      users.set(newUserId, userRecord);
     }
-  }
-
-  otpStore.delete(normalizedEmail);
-
-  if (!userRecord) {
-    return res.status(400).json({ success: false, message: 'User record could not be located.' });
   }
 
   const token = `jwt-${Date.now()}-${userRecord.id}`;
