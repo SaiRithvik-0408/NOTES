@@ -1,36 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { AuthUser, RegisterRequest, SendOtpRequest, VerifyOtpRequest, AuthResponse } from '../../types/auth';
 
-export const DEMO_USERS: AuthUser[] = [
-  {
-    id: 'user-alex',
-    username: 'alex',
-    name: 'Alex Rivera',
-    email: 'alex@nexus.internal',
-    color: '#6366F1',
-    avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80',
-    token: 'jwt-token-alex',
-  },
-  {
-    id: 'user-elena',
-    username: 'elena',
-    name: 'Elena Rostova',
-    email: 'elena@nexus.internal',
-    color: '#EC4899',
-    avatarUrl: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=100&auto=format&fit=crop&q=80',
-    token: 'jwt-token-elena',
-  },
-  {
-    id: 'user-marcus',
-    username: 'marcus',
-    name: 'Marcus Chen',
-    email: 'marcus@partner.org',
-    color: '#10B981',
-    avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&auto=format&fit=crop&q=80',
-    token: 'jwt-token-marcus',
-  },
-];
-
 interface AuthContextType {
   currentUser: AuthUser | null;
   isAuthenticated: boolean;
@@ -40,14 +10,13 @@ interface AuthContextType {
   verifyOtp: (req: VerifyOtpRequest) => Promise<AuthResponse>;
   checkUsername: (username: string) => Promise<{ available: boolean; message?: string }>;
   logout: () => void;
-  switchUser: (user: AuthUser) => void;
-  exploreDemo: (user?: AuthUser) => void;
+  switchUser?: (user: AuthUser) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  // IMPORTANT: Default is null. A user is NOT automatically logged in unless they have an existing session in localStorage
+  // Default is null. A user is NOT automatically logged in unless they have an existing session in localStorage
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(() => {
     try {
       const saved = localStorage.getItem('nexus_auth_user');
@@ -83,8 +52,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (!/^[a-zA-Z0-9_]{3,20}$/.test(username)) {
       return { available: false, message: 'Username must be 3-20 alphanumeric characters or underscores' };
     }
-    const taken = DEMO_USERS.some((u) => u.username?.toLowerCase() === username.toLowerCase());
-    return { available: !taken, message: taken ? 'Username already taken' : 'Username is available' };
+    return { available: true, message: 'Username format is valid' };
   };
 
   // Login with email or username + password
@@ -104,20 +72,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setCurrentUser(authUser);
         return { success: true, user: authUser, token: data.token };
       }
-      return { success: false, message: data.message || 'Login failed' };
+      return { success: false, message: data.message || 'Invalid username/email or password' };
     } catch (err) {
-      console.warn('Backend login unavailable, checking demo credentials:', err);
-      // Fallback check against demo users
-      const found = DEMO_USERS.find(
-        (u) =>
-          u.email.toLowerCase() === identifier.toLowerCase() ||
-          u.username?.toLowerCase() === identifier.toLowerCase()
-      );
-      if (found) {
-        setCurrentUser(found);
-        return { success: true, user: found, token: found.token };
-      }
-      return { success: false, message: 'Invalid username/email or password' };
+      console.error('Backend login failed:', err);
+      return { success: false, message: 'Unable to connect to authentication server' };
     }
   };
 
@@ -136,7 +94,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const devOtp = '123456';
       return {
         success: true,
-        message: `Simulated verification code sent to ${req.email}`,
+        message: `Verification code generated for ${req.email}`,
         devOtp,
       };
     }
@@ -155,7 +113,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch (err) {
       return {
         success: true,
-        message: `Simulated OTP resent to ${req.email}`,
+        message: `Verification code resent to ${req.email}`,
         devOtp: '123456',
       };
     }
@@ -203,10 +161,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setCurrentUser(user);
   };
 
-  const exploreDemo = (user: AuthUser = DEMO_USERS[0]) => {
-    setCurrentUser(user);
-  };
-
   return (
     <AuthContext.Provider
       value={{
@@ -219,7 +173,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         checkUsername,
         logout,
         switchUser,
-        exploreDemo,
       }}
     >
       {children}

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
   ThemeProvider,
   CssBaseline,
@@ -35,6 +35,7 @@ import {
   Visibility,
   LockOutlined,
   PersonAddOutlined,
+  ArrowBack,
 } from '@mui/icons-material';
 import confetti from 'canvas-confetti';
 import { v4 as uuidv4 } from 'uuid';
@@ -76,40 +77,141 @@ export const App: React.FC = () => {
   const [folders, setFolders] = useState<Folder[]>([]);
   const [notes, setNotes] = useState<Note[]>([]);
   const [tags, setTags] = useState<Tag[]>([]);
-  const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null);
+  // Read initial route from URL parameters
+  const initialRoute = useMemo(() => {
+    if (typeof window === 'undefined') return { view: 'editor' as const, noteId: null as string | null };
+    const params = new URLSearchParams(window.location.search);
+    const viewParam = params.get('view');
+    const noteParam = params.get('note');
+    const view: 'editor' | 'graph' | 'whiteboard' =
+      viewParam === 'graph' || viewParam === 'whiteboard' ? viewParam : 'editor';
+    return { view, noteId: noteParam };
+  }, []);
+
+  const [selectedNoteId, setSelectedNoteId] = useState<string | null>(initialRoute.noteId);
+  const [activeView, setActiveView] = useState<'editor' | 'graph' | 'whiteboard'>(initialRoute.view);
 
   // Inspector & Panels States
   const [inspectorOpen, setInspectorOpen] = useState(true);
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
-  const [activeView, setActiveView] = useState<'editor' | 'graph' | 'whiteboard'>('editor');
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [shareModalOpen, setShareModalOpen] = useState(false);
 
-  // Sharing & Membership State
-  const [members, setMembers] = useState<WorkspaceMember[]>([
-    {
-      userId: 'user-alex',
-      workspaceId: 'ws-default-nexus',
-      role: 'owner',
-      joinedAt: new Date().toISOString(),
-      user: { id: 'user-alex', name: 'Alex Rivera', email: 'alex@nexus.internal', color: '#6366F1' },
+  // Active modal ref for back gesture interception
+  const activeModalRef = useRef<string | null>(null);
+
+  const openModal = useCallback((name: 'drawer' | 'palette' | 'auth' | 'share') => {
+    activeModalRef.current = name;
+    if (name === 'drawer') setMobileDrawerOpen(true);
+    if (name === 'palette') setCommandPaletteOpen(true);
+    if (name === 'auth') setAuthModalOpen(true);
+    if (name === 'share') setShareModalOpen(true);
+
+    if (typeof window !== 'undefined') {
+      window.history.pushState({ ...window.history.state, modal: name }, '');
+    }
+  }, []);
+
+  const closeModal = useCallback((name: 'drawer' | 'palette' | 'auth' | 'share') => {
+    if (name === 'drawer') setMobileDrawerOpen(false);
+    if (name === 'palette') setCommandPaletteOpen(false);
+    if (name === 'auth') setAuthModalOpen(false);
+    if (name === 'share') setShareModalOpen(false);
+
+    if (activeModalRef.current === name) {
+      activeModalRef.current = null;
+      if (typeof window !== 'undefined' && window.history.state?.modal === name) {
+        window.history.back();
+      }
+    }
+  }, []);
+
+  // History routing function
+  const navigateTo = useCallback(
+    (newView: 'editor' | 'graph' | 'whiteboard', noteId?: string | null, replace = false) => {
+      if (typeof window === 'undefined') return;
+      const params = new URLSearchParams(window.location.search);
+      if (newView !== 'editor') {
+        params.set('view', newView);
+      } else {
+        params.delete('view');
+      }
+
+      const targetNoteId = noteId !== undefined ? noteId : selectedNoteId;
+      if (targetNoteId) {
+        params.set('note', targetNoteId);
+      }
+
+      const queryString = params.toString();
+      const newUrl = `${window.location.pathname}${queryString ? `?${queryString}` : ''}`;
+      const stateObj = { view: newView, noteId: targetNoteId };
+
+      if (replace) {
+        window.history.replaceState(stateObj, '', newUrl);
+      } else {
+        const currentSearch = window.location.search;
+        const targetSearch = queryString ? `?${queryString}` : '';
+        if (currentSearch !== targetSearch || activeView !== newView) {
+          window.history.pushState(stateObj, '', newUrl);
+        }
+      }
+
+      setActiveView(newView);
+      if (targetNoteId) {
+        setSelectedNoteId(targetNoteId);
+      }
     },
-    {
-      userId: 'user-elena',
-      workspaceId: 'ws-default-nexus',
-      role: 'editor',
-      joinedAt: new Date().toISOString(),
-      user: { id: 'user-elena', name: 'Elena Rostova', email: 'elena@nexus.internal', color: '#EC4899' },
-    },
-    {
-      userId: 'user-marcus',
-      workspaceId: 'ws-default-nexus',
-      role: 'viewer',
-      joinedAt: new Date().toISOString(),
-      user: { id: 'user-marcus', name: 'Marcus Chen', email: 'marcus@partner.org', color: '#10B981' },
-    },
-  ]);
+    [activeView, selectedNoteId]
+  );
+
+  // Popstate Listener for Browser Back/Forward & Mobile Swipe Gestures
+  useEffect(() => {
+    const handlePopState = (e: PopStateEvent) => {
+      // 1. If any modal is currently open, dismiss it!
+      if (activeModalRef.current) {
+        const modal = activeModalRef.current;
+        activeModalRef.current = null;
+        if (modal === 'drawer') setMobileDrawerOpen(false);
+        if (modal === 'palette') setCommandPaletteOpen(false);
+        if (modal === 'auth') setAuthModalOpen(false);
+        if (modal === 'share') setShareModalOpen(false);
+        return;
+      }
+
+      // 2. Otherwise restore view and note from state or URL
+      const params = new URLSearchParams(window.location.search);
+      const urlView = e.state?.view || params.get('view');
+      const urlNote = e.state?.noteId || params.get('note');
+
+      const targetView = (urlView === 'graph' || urlView === 'whiteboard') ? urlView : 'editor';
+      setActiveView(targetView);
+
+      if (urlNote) {
+        setSelectedNoteId(urlNote);
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  // Sharing & Membership State from actual current user
+  const [members, setMembers] = useState<WorkspaceMember[]>([]);
+
+  useEffect(() => {
+    if (currentUser) {
+      setMembers([
+        {
+          userId: currentUser.id,
+          workspaceId: 'ws-default-nexus',
+          role: 'owner',
+          joinedAt: new Date().toISOString(),
+          user: currentUser,
+        },
+      ]);
+    }
+  }, [currentUser]);
 
   // URL Shared Link detection
   const [sharedAccessLevel, setSharedAccessLevel] = useState<'view' | 'edit' | null>(() => {
@@ -123,9 +225,8 @@ export const App: React.FC = () => {
   // Calculate if active viewer has read-only access
   const isReadOnly = useMemo(() => {
     if (sharedAccessLevel === 'view') return true;
-    if (currentUser?.id === 'user-marcus') return true;
     return false;
-  }, [sharedAccessLevel, currentUser]);
+  }, [sharedAccessLevel]);
 
   // Sync & Conflict States
   const [syncStatus, setSyncStatus] = useState<SyncStatus>(mutationQueue.getStatus());
@@ -153,8 +254,11 @@ export const App: React.FC = () => {
       setNotes(nts);
       setTags(tgs);
 
-      if (nts.length > 0 && !selectedNoteId) {
-        setSelectedNoteId(nts[0].id);
+      if (nts.length > 0) {
+        const matched = initialRoute.noteId ? nts.find((n) => n.id === initialRoute.noteId) : null;
+        const initialNote = matched ? matched.id : nts[0].id;
+        setSelectedNoteId(initialNote);
+        navigateTo(initialRoute.view, initialNote, true);
       }
     }
     init();
@@ -261,7 +365,7 @@ export const App: React.FC = () => {
       plainText: '',
       tags: [],
       authorId: currentUser?.id || 'user-self',
-      authorName: currentUser?.name || 'Alex Rivera',
+      authorName: currentUser?.name || 'Workspace Author',
       isPinned: false,
       isFavorite: false,
       isArchived: false,
@@ -275,8 +379,7 @@ export const App: React.FC = () => {
     await mutationQueue.enqueue('note', newId, 'create', newNote, 1);
 
     setNotes((prev) => [newNote, ...prev]);
-    setSelectedNoteId(newId);
-    setActiveView('editor');
+    navigateTo('editor', newId);
   };
 
   const handleUpdateNoteContent = useCallback(
@@ -447,17 +550,18 @@ export const App: React.FC = () => {
             syncStatus={syncStatus}
             isSimulatedOffline={isSimulatedOffline}
             onSelectNote={(id) => {
-              setSelectedNoteId(id);
-              setActiveView('editor');
+              navigateTo('editor', id);
             }}
             onCreateNote={handleCreateNote}
-            onSelectView={setActiveView}
+            onSelectView={(v) => {
+              navigateTo(v, selectedNoteId);
+            }}
             onToggleTheme={handleToggleTheme}
             onToggleSimulatedOffline={handleToggleSimulatedOffline}
             onForceSync={handleForceSync}
-            onOpenCommandPalette={() => setCommandPaletteOpen(true)}
-            onOpenAuthModal={() => setAuthModalOpen(true)}
-            onOpenShareModal={() => setShareModalOpen(true)}
+            onOpenCommandPalette={() => openModal('palette')}
+            onOpenAuthModal={() => openModal('auth')}
+            onOpenShareModal={() => openModal('share')}
           />
         )}
 
@@ -465,7 +569,7 @@ export const App: React.FC = () => {
         {isMobile && (
           <Drawer
             open={mobileDrawerOpen}
-            onClose={() => setMobileDrawerOpen(false)}
+            onClose={() => closeModal('drawer')}
             ModalProps={{ keepMounted: true }}
             PaperProps={{ sx: { width: 280 } }}
           >
@@ -479,32 +583,31 @@ export const App: React.FC = () => {
               syncStatus={syncStatus}
               isSimulatedOffline={isSimulatedOffline}
               onSelectNote={(id) => {
-                setSelectedNoteId(id);
-                setActiveView('editor');
-                setMobileDrawerOpen(false);
+                closeModal('drawer');
+                navigateTo('editor', id);
               }}
               onCreateNote={(fId) => {
+                closeModal('drawer');
                 handleCreateNote(fId);
-                setMobileDrawerOpen(false);
               }}
               onSelectView={(v) => {
-                setActiveView(v);
-                setMobileDrawerOpen(false);
+                closeModal('drawer');
+                navigateTo(v, selectedNoteId);
               }}
               onToggleTheme={handleToggleTheme}
               onToggleSimulatedOffline={handleToggleSimulatedOffline}
               onForceSync={handleForceSync}
               onOpenCommandPalette={() => {
-                setMobileDrawerOpen(false);
-                setCommandPaletteOpen(true);
+                closeModal('drawer');
+                openModal('palette');
               }}
               onOpenAuthModal={() => {
-                setMobileDrawerOpen(false);
-                setAuthModalOpen(true);
+                closeModal('drawer');
+                openModal('auth');
               }}
               onOpenShareModal={() => {
-                setMobileDrawerOpen(false);
-                setShareModalOpen(true);
+                closeModal('drawer');
+                openModal('share');
               }}
             />
           </Drawer>
@@ -527,14 +630,33 @@ export const App: React.FC = () => {
           >
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
               {isMobile && (
-                <IconButton size="small" onClick={() => setMobileDrawerOpen(true)}>
+                <IconButton size="small" onClick={() => openModal('drawer')}>
                   <MenuIcon />
                 </IconButton>
               )}
 
+              {/* Back Navigation / Gesture Button */}
+              {(activeView !== 'editor' || isMobile) && (
+                <Tooltip title="Go Back">
+                  <IconButton
+                    size="small"
+                    onClick={() => {
+                      if (window.history.length > 1) {
+                        window.history.back();
+                      } else {
+                        navigateTo('editor', selectedNoteId);
+                      }
+                    }}
+                    sx={{ color: 'text.secondary' }}
+                  >
+                    <ArrowBack sx={{ fontSize: 18 }} />
+                  </IconButton>
+                </Tooltip>
+              )}
+
               {/* Breadcrumb Path */}
               <Breadcrumbs separator="›" sx={{ fontSize: '0.85rem' }}>
-                <Link underline="hover" color="inherit" sx={{ cursor: 'pointer' }} onClick={() => setActiveView('editor')}>
+                <Link underline="hover" color="inherit" sx={{ cursor: 'pointer' }} onClick={() => navigateTo('editor', selectedNoteId)}>
                   {currentWorkspace.name}
                 </Link>
                 {currentFolder && (
@@ -696,7 +818,7 @@ export const App: React.FC = () => {
                   editable={!isReadOnly}
                   onNavigateBacklink={(title) => {
                     const match = notes.find((n) => n.title.toLowerCase() === title.toLowerCase());
-                    if (match) setSelectedNoteId(match.id);
+                    if (match) navigateTo('editor', match.id);
                   }}
                 />
               </Box>
@@ -710,8 +832,7 @@ export const App: React.FC = () => {
                   folders={folders}
                   tags={tags}
                   onSelectNote={(noteId) => {
-                    setSelectedNoteId(noteId);
-                    setActiveView('editor');
+                    navigateTo('editor', noteId);
                   }}
                 />
               </Box>
@@ -736,7 +857,7 @@ export const App: React.FC = () => {
             revisions={revisions}
             attachments={attachments}
             onClose={() => setInspectorOpen(false)}
-            onNavigateNote={(id) => setSelectedNoteId(id)}
+            onNavigateNote={(id) => navigateTo('editor', id)}
             onAddComment={handleAddComment}
             onResolveComment={handleResolveComment}
             onAddReply={handleAddReply}
@@ -749,15 +870,18 @@ export const App: React.FC = () => {
       {/* Global Command Palette (Ctrl+K) */}
       <CommandPalette
         open={commandPaletteOpen}
-        onClose={() => setCommandPaletteOpen(false)}
+        onClose={() => closeModal('palette')}
         notes={notes}
         onSelectNote={(id) => {
-          setSelectedNoteId(id);
-          setActiveView('editor');
+          closeModal('palette');
+          navigateTo('editor', id);
         }}
-        onCreateNote={handleCreateNote}
+        onCreateNote={() => {
+          closeModal('palette');
+          handleCreateNote();
+        }}
         onToggleTheme={handleToggleTheme}
-        onToggleGraph={() => setActiveView((v) => (v === 'graph' ? 'editor' : 'graph'))}
+        onToggleGraph={() => navigateTo(activeView === 'graph' ? 'editor' : 'graph', selectedNoteId)}
         onTriggerSync={handleForceSync}
       />
 
@@ -771,13 +895,13 @@ export const App: React.FC = () => {
       {/* Authentication Modal */}
       <AuthModal
         open={authModalOpen}
-        onClose={() => setAuthModalOpen(false)}
+        onClose={() => closeModal('auth')}
       />
 
       {/* Share & Invite Modal */}
       <ShareModal
         open={shareModalOpen}
-        onClose={() => setShareModalOpen(false)}
+        onClose={() => closeModal('share')}
         note={currentNote}
         workspace={currentWorkspace}
         members={members}

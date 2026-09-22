@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Box,
   Typography,
@@ -26,19 +26,47 @@ import {
   CheckCircleOutline,
   ErrorOutline,
   ArrowBack,
-  AdminPanelSettings,
-  EditNote,
-  AutoAwesome,
   SecurityOutlined,
   SendOutlined,
 } from '@mui/icons-material';
-import { useAuth, DEMO_USERS } from './AuthContext';
+import { useAuth } from './AuthContext';
 
 export const AuthScreen: React.FC = () => {
-  const { login, register, verifyOtp, sendOtp, checkUsername, exploreDemo } = useAuth();
+  const { login, register, verifyOtp, sendOtp, checkUsername } = useAuth();
 
-  // Mode: 'signin' | 'register' | 'otp'
-  const [authMode, setAuthMode] = useState<'signin' | 'register' | 'otp'>('signin');
+  // Mode: 'signin' | 'register' | 'otp' with browser history & gesture support
+  const [authMode, setAuthModeState] = useState<'signin' | 'register' | 'otp'>(() => {
+    if (typeof window !== 'undefined') {
+      const p = new URLSearchParams(window.location.search).get('auth');
+      if (p === 'register' || p === 'otp') return p;
+    }
+    return 'signin';
+  });
+
+  const setAuthMode = useCallback((mode: 'signin' | 'register' | 'otp', push = true) => {
+    setAuthModeState(mode);
+    if (typeof window !== 'undefined' && push) {
+      const url = new URL(window.location.href);
+      if (mode === 'signin') {
+        url.searchParams.delete('auth');
+      } else {
+        url.searchParams.set('auth', mode);
+      }
+      window.history.pushState({ authMode: mode }, '', url.toString());
+    }
+  }, []);
+
+  useEffect(() => {
+    const handlePopState = (e: PopStateEvent) => {
+      const mode = (e.state?.authMode || new URLSearchParams(window.location.search).get('auth') || 'signin') as
+        | 'signin'
+        | 'register'
+        | 'otp';
+      setAuthModeState(mode);
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
 
   // Sign In Form States
   const [loginIdentifier, setLoginIdentifier] = useState('');
@@ -533,80 +561,9 @@ export const AuthScreen: React.FC = () => {
                 {isLoading ? <CircularProgress size={22} color="inherit" /> : 'Sign In to Workspace'}
               </Button>
             </Box>
-
-            {/* Quick Demo Profiles Section */}
-            <Divider sx={{ my: 3, borderColor: 'rgba(255, 255, 255, 0.08)' }}>
-              <Typography variant="caption" sx={{ color: '#64748B', px: 1, fontWeight: 600 }}>
-                OR QUICK ACCESS AS DEMO USER
-              </Typography>
-            </Divider>
-
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-              {DEMO_USERS.map((user) => {
-                const roleIcon =
-                  user.id === 'user-alex' ? (
-                    <AdminPanelSettings sx={{ fontSize: 15 }} />
-                  ) : user.id === 'user-elena' ? (
-                    <EditNote sx={{ fontSize: 15 }} />
-                  ) : (
-                    <Visibility sx={{ fontSize: 15 }} />
-                  );
-                const roleName = user.id === 'user-alex' ? 'Owner' : user.id === 'user-elena' ? 'Editor' : 'Viewer';
-
-                return (
-                  <Paper
-                    key={user.id}
-                    elevation={0}
-                    onClick={() => exploreDemo(user)}
-                    sx={{
-                      p: 1.2,
-                      borderRadius: '12px',
-                      bgcolor: 'rgba(255, 255, 255, 0.02)',
-                      border: '1px solid rgba(255, 255, 255, 0.06)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      cursor: 'pointer',
-                      transition: 'all 0.15s ease',
-                      '&:hover': {
-                        bgcolor: 'rgba(99, 102, 241, 0.12)',
-                        borderColor: '#6366F1',
-                        transform: 'translateY(-1px)',
-                      },
-                    }}
-                  >
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.2 }}>
-                      <Avatar src={user.avatarUrl} sx={{ width: 30, height: 30, bgcolor: user.color, fontSize: '0.8rem' }}>
-                        {user.name[0]}
-                      </Avatar>
-                      <Box>
-                        <Typography variant="body2" sx={{ fontWeight: 600, color: '#E2E8F0', fontSize: '0.85rem' }}>
-                          {user.name} <span style={{ color: '#64748B', fontWeight: 400 }}>@{user.username || user.name.toLowerCase()}</span>
-                        </Typography>
-                        <Typography variant="caption" sx={{ color: '#94A3B8', fontSize: '0.72rem' }}>
-                          {user.email}
-                        </Typography>
-                      </Box>
-                    </Box>
-                    <Chip
-                      icon={roleIcon}
-                      label={roleName}
-                      size="small"
-                      sx={{
-                        height: 22,
-                        fontSize: '0.7rem',
-                        fontWeight: 700,
-                        bgcolor: 'rgba(99, 102, 241, 0.15)',
-                        color: '#A5B4FC',
-                        border: '1px solid rgba(99, 102, 241, 0.25)',
-                      }}
-                    />
-                  </Paper>
-                );
-              })}
-            </Box>
           </Box>
         )}
+
 
         {/* MODE 2: CREATE ACCOUNT (WITH USERNAME + CONFIRM PASSWORD) */}
         {authMode === 'register' && (
@@ -1018,23 +975,6 @@ export const AuthScreen: React.FC = () => {
             </Box>
           </Box>
         )}
-
-        {/* Guest Demo Preview Option */}
-        <Box sx={{ mt: 3, pt: 2, borderTop: '1px solid rgba(255, 255, 255, 0.06)', textAlign: 'center' }}>
-          <Button
-            size="small"
-            onClick={() => exploreDemo(DEMO_USERS[0])}
-            startIcon={<AutoAwesome sx={{ fontSize: 15, color: '#A855F7' }} />}
-            sx={{
-              color: '#94A3B8',
-              fontSize: '0.78rem',
-              textTransform: 'none',
-              '&:hover': { color: '#E2E8F0', bgcolor: 'rgba(255, 255, 255, 0.04)' },
-            }}
-          >
-            Explore Demo Workspace as Alex Rivera
-          </Button>
-        </Box>
       </Paper>
     </Box>
   );

@@ -23,8 +23,6 @@ import {
   LockOutlined,
   PersonOutline,
   EmailOutlined,
-  AdminPanelSettings,
-  EditNote,
   Visibility,
   VisibilityOff,
   AlternateEmail,
@@ -32,7 +30,7 @@ import {
   SecurityOutlined,
   Close,
 } from '@mui/icons-material';
-import { useAuth, DEMO_USERS } from './AuthContext';
+import { useAuth } from './AuthContext';
 
 interface AuthModalProps {
   open: boolean;
@@ -41,7 +39,7 @@ interface AuthModalProps {
 
 export const AuthModal: React.FC<AuthModalProps> = ({ open, onClose }) => {
   const theme = useTheme();
-  const { currentUser, login, register, verifyOtp, checkUsername, switchUser, logout } = useAuth();
+  const { currentUser, login, register, verifyOtp, checkUsername, logout } = useAuth();
   const [tab, setTab] = useState(0); // 0: Login, 1: Register, 2: OTP
   const [identifier, setIdentifier] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
@@ -138,11 +136,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({ open, onClose }) => {
     }
   };
 
-  const handleQuickDemoSwitch = (user: (typeof DEMO_USERS)[0]) => {
-    switchUser(user);
-    onClose();
-  };
-
   return (
     <Dialog
       open={open}
@@ -221,87 +214,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({ open, onClose }) => {
             </Button>
           </Paper>
         )}
-
-        {/* Quick Demo Profiles */}
-        <Typography
-          variant="caption"
-          sx={{ fontWeight: 700, textTransform: 'uppercase', color: 'text.secondary', display: 'block', mb: 1 }}
-        >
-          Quick Demo Accounts (1-Click Switch)
-        </Typography>
-        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, mb: 2.5 }}>
-          {DEMO_USERS.map((user) => {
-            const isSelected = currentUser?.id === user.id;
-            const role = user.id === 'user-alex' ? 'Owner' : user.id === 'user-elena' ? 'Editor' : 'Viewer';
-            const icon =
-              user.id === 'user-alex' ? (
-                <AdminPanelSettings sx={{ fontSize: 16 }} />
-              ) : user.id === 'user-elena' ? (
-                <EditNote sx={{ fontSize: 16 }} />
-              ) : (
-                <Visibility sx={{ fontSize: 16 }} />
-              );
-
-            return (
-              <Paper
-                key={user.id}
-                elevation={0}
-                onClick={() => handleQuickDemoSwitch(user)}
-                sx={{
-                  p: 1.2,
-                  borderRadius: '10px',
-                  border: isSelected ? '1px solid #6366F1' : `1px solid ${theme.palette.divider}`,
-                  bgcolor: isSelected
-                    ? theme.palette.mode === 'dark'
-                      ? 'rgba(99, 102, 241, 0.15)'
-                      : 'rgba(79, 70, 229, 0.08)'
-                    : 'transparent',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  cursor: 'pointer',
-                  transition: 'all 0.15s ease',
-                  '&:hover': {
-                    borderColor: '#6366F1',
-                    transform: 'translateY(-1px)',
-                  },
-                }}
-              >
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                  <Avatar src={user.avatarUrl} sx={{ width: 28, height: 28, bgcolor: user.color, fontSize: '0.8rem' }}>
-                    {user.name[0]}
-                  </Avatar>
-                  <Box>
-                    <Typography variant="body2" sx={{ fontWeight: 600, fontSize: '0.82rem' }}>
-                      {user.name} <span style={{ color: '#94A3B8', fontWeight: 400 }}>@{user.username}</span>
-                    </Typography>
-                    <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '0.7rem' }}>
-                      {user.email}
-                    </Typography>
-                  </Box>
-                </Box>
-                <Chip
-                  icon={icon}
-                  label={role}
-                  size="small"
-                  sx={{
-                    height: 20,
-                    fontSize: '0.68rem',
-                    fontWeight: 700,
-                    bgcolor: isSelected ? '#6366F1' : undefined,
-                    color: isSelected ? '#FFFFFF' : undefined,
-                  }}
-                />
-              </Paper>
-            );
-          })}
-        </Box>
-
-        <Divider sx={{ my: 2 }}>
-          <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600 }}>
-            OR SIGN IN WITH CREDENTIALS
-          </Typography>
-        </Divider>
 
         {/* Tab Selector */}
         {tab !== 2 && (
