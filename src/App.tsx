@@ -57,6 +57,7 @@ import { ConflictDialog } from './components/common/ConflictDialog';
 import { SyncStatusIndicator } from './components/common/SyncStatusIndicator';
 import { useAuth } from './modules/auth/AuthContext';
 import { AuthModal } from './modules/auth/AuthModal';
+import { AuthScreen } from './modules/auth/AuthScreen';
 import { ShareModal } from './modules/share/ShareModal';
 
 export const App: React.FC = () => {
@@ -429,7 +430,11 @@ export const App: React.FC = () => {
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
-      <Box sx={{ display: 'flex', height: '100vh', width: '100vw', overflow: 'hidden' }}>
+      {!currentUser ? (
+        <AuthScreen />
+      ) : (
+        <>
+          <Box sx={{ display: 'flex', height: '100vh', width: '100vw', overflow: 'hidden' }}>
         {/* Desktop Sidebar */}
         {!isMobile && (
           <Sidebar
@@ -780,8 +785,10 @@ export const App: React.FC = () => {
         onUpdateMemberRole={handleUpdateMemberRole}
         onRemoveMember={handleRemoveMember}
       />
-    </ThemeProvider>
-  );
+      </>
+    )}
+  </ThemeProvider>
+);
 };
 
 export default App;

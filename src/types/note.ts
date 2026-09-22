@@ -3,6 +3,7 @@ export type WorkspaceRole = 'owner' | 'admin' | 'editor' | 'commenter' | 'viewer
 export interface UserProfile {
   id: string;
   name: string;
+  username?: string;
   email: string;
   avatarUrl?: string;
   color: string;

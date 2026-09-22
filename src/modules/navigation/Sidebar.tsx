@@ -393,14 +393,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <Typography variant="caption" sx={{ fontWeight: 700, display: 'block', lineHeight: 1.1 }}>
               {currentUser?.name || 'Sign In'}
             </Typography>
-            <Typography variant="caption" sx={{ color: 'text.muted', fontSize: '0.68rem' }}>
-              {currentUser?.id === 'user-alex'
-                ? 'Workspace Owner'
-                : currentUser?.id === 'user-elena'
-                ? 'Senior Editor'
-                : currentUser
-                ? 'Viewer / Member'
-                : 'Click to Login'}
+            <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '0.68rem', display: 'block' }}>
+              {currentUser?.username ? `@${currentUser.username}` : (currentUser?.email || 'Click to Login')}
             </Typography>
           </Box>
         </Box>

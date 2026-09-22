@@ -4,6 +4,34 @@ export interface AuthUser extends UserProfile {
   token: string;
 }
 
+export interface RegisterRequest {
+  name: string;
+  username: string;
+  email: string;
+  password: string;
+  confirmPassword: string;
+}
+
+export interface SendOtpRequest {
+  email: string;
+  name?: string;
+  username?: string;
+  type: 'register' | 'login' | 'reset';
+}
+
+export interface VerifyOtpRequest {
+  email: string;
+  code: string;
+}
+
+export interface AuthResponse {
+  success: boolean;
+  token?: string;
+  user?: AuthUser;
+  message?: string;
+  devOtp?: string; // Provided in local dev environment for easy testing
+}
+
 export interface ShareLink {
   id: string;
   noteId?: string;

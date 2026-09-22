@@ -96,32 +96,278 @@ app.get('/api/v1/sync', (req, res) => {
   res.json(response);
 });
 
-// Authentication Routes
-app.post('/api/v1/auth/login', (req, res) => {
-  const { email, password } = req.body;
+// ==========================================
+// Authentication Routes (Username, OTP, Login)
+// ==========================================
+
+// Check username availability
+app.get('/api/v1/auth/check-username', (req, res) => {
+  const username = (req.query.username as string || '').trim().toLowerCase();
+  if (!username) {
+    return res.status(400).json({ available: false, message: 'Username is required' });
+  }
+
+  if (!/^[a-zA-Z0-9_]{3,20}$/.test(username)) {
+    return res.json({
+      available: false,
+      message: 'Username must be 3-20 alphanumeric characters or underscores',
+    });
+  }
+
+  const existing = Array.from(serverDb.users.values()).find(
+    (u) => u.username?.toLowerCase() === username
+  );
+
+  if (existing) {
+    return res.json({ available: false, message: 'Username is already taken' });
+  }
+
+  res.json({ available: true, message: 'Username is available' });
+});
+
+// Send or Resend OTP
+app.post('/api/v1/auth/send-otp', (req, res) => {
+  const { email } = req.body;
+  if (!email || !email.includes('@')) {
+    return res.status(400).json({ success: false, message: 'Valid email is required' });
+  }
+
+  const normalizedEmail = email.trim().toLowerCase();
+  const code = Math.floor(100000 + Math.random() * 900000).toString(); // 6-digit OTP
+  const expiresAt = Date.now() + 10 * 60 * 1000; // 10 minutes expiry
+
+  const existingOtp = serverDb.otpStore.get(normalizedEmail);
+  serverDb.otpStore.set(normalizedEmail, {
+    code,
+    expiresAt,
+    userData: existingOtp?.userData,
+  });
+
+  console.log(`🔐 [Nexus Auth] OTP for ${normalizedEmail}: ${code}`);
+
   res.json({
     success: true,
-    token: `jwt-${Date.now()}`,
-    user: {
-      id: `user-${email.split('@')[0]}`,
-      email,
-      name: email.split('@')[0],
-      color: '#6366F1',
-    },
+    message: `Verification code sent to ${normalizedEmail}`,
+    devOtp: code, // Dev helper for instant testing
   });
 });
 
+// Initiate Registration with OTP
 app.post('/api/v1/auth/register', (req, res) => {
-  const { name, email, password } = req.body;
+  const { name, username, email, password, confirmPassword } = req.body;
+
+  if (!name || !username || !email || !password) {
+    return res.status(400).json({ success: false, message: 'All fields are required' });
+  }
+
+  if (password !== confirmPassword) {
+    return res.status(400).json({ success: false, message: 'Passwords do not match' });
+  }
+
+  if (password.length < 6) {
+    return res.status(400).json({ success: false, message: 'Password must be at least 6 characters long' });
+  }
+
+  const normalizedUsername = username.trim().toLowerCase();
+  if (!/^[a-zA-Z0-9_]{3,20}$/.test(normalizedUsername)) {
+    return res.status(400).json({
+      success: false,
+      message: 'Username must be 3-20 alphanumeric characters or underscores',
+    });
+  }
+
+  const normalizedEmail = email.trim().toLowerCase();
+
+  // Check username taken
+  const usernameTaken = Array.from(serverDb.users.values()).some(
+    (u) => u.username?.toLowerCase() === normalizedUsername
+  );
+  if (usernameTaken) {
+    return res.status(400).json({ success: false, message: 'Username is already taken' });
+  }
+
+  // Check email registered
+  const emailTaken = Array.from(serverDb.users.values()).some(
+    (u) => u.email?.toLowerCase() === normalizedEmail
+  );
+  if (emailTaken) {
+    return res.status(400).json({ success: false, message: 'An account with this email already exists' });
+  }
+
+  // Generate 6-digit OTP
+  const code = Math.floor(100000 + Math.random() * 900000).toString();
+  const expiresAt = Date.now() + 10 * 60 * 1000;
+
+  serverDb.otpStore.set(normalizedEmail, {
+    code,
+    expiresAt,
+    userData: {
+      name: name.trim(),
+      username: normalizedUsername,
+      email: normalizedEmail,
+      password,
+    },
+  });
+
+  console.log(`🔐 [Nexus Auth] New Registration OTP for ${normalizedEmail} (${normalizedUsername}): ${code}`);
+
   res.json({
     success: true,
-    token: `jwt-${Date.now()}`,
+    message: `Verification code sent to ${normalizedEmail}`,
+    devOtp: code,
+  });
+});
+
+// Verify OTP & finalize registration / login
+app.post('/api/v1/auth/verify-otp', (req, res) => {
+  const { email, code } = req.body;
+  if (!email || !code) {
+    return res.status(400).json({ success: false, message: 'Email and verification code are required' });
+  }
+
+  const normalizedEmail = email.trim().toLowerCase();
+  const challenge = serverDb.otpStore.get(normalizedEmail);
+
+  if (!challenge) {
+    return res.status(400).json({ success: false, message: 'No pending verification found. Please request a new code.' });
+  }
+
+  if (Date.now() > challenge.expiresAt) {
+    serverDb.otpStore.delete(normalizedEmail);
+    return res.status(400).json({ success: false, message: 'Verification code has expired. Please request a new one.' });
+  }
+
+  if (challenge.code !== code.trim()) {
+    return res.status(400).json({ success: false, message: 'Invalid verification code. Please check and try again.' });
+  }
+
+  // Code verified! If pending registration exists, finalize user creation:
+  let userRecord: any = null;
+  if (challenge.userData) {
+    const newUserId = `user-${Date.now()}`;
+    const colors = ['#6366F1', '#EC4899', '#10B981', '#3B82F6', '#8B5CF6', '#F59E0B'];
+    const randomColor = colors[Math.floor(Math.random() * colors.length)];
+
+    userRecord = {
+      id: newUserId,
+      username: challenge.userData.username,
+      name: challenge.userData.name,
+      email: challenge.userData.email,
+      password: challenge.userData.password,
+      color: randomColor,
+      isVerified: true,
+      createdAt: new Date().toISOString(),
+    };
+
+    serverDb.users.set(newUserId, userRecord);
+
+    // Auto-join default workspace
+    const defaultWsMembers = workspaceMembersStore.get('ws-default-nexus') || [];
+    defaultWsMembers.push({
+      userId: newUserId,
+      workspaceId: 'ws-default-nexus',
+      role: 'editor',
+      joinedAt: new Date().toISOString(),
+      user: {
+        id: newUserId,
+        username: userRecord.username,
+        name: userRecord.name,
+        email: userRecord.email,
+        color: userRecord.color,
+      },
+    });
+    workspaceMembersStore.set('ws-default-nexus', defaultWsMembers);
+  } else {
+    // Existing user verification
+    userRecord = Array.from(serverDb.users.values()).find(
+      (u) => u.email.toLowerCase() === normalizedEmail
+    );
+    if (userRecord) {
+      userRecord.isVerified = true;
+    }
+  }
+
+  // Clear challenge
+  serverDb.otpStore.delete(normalizedEmail);
+
+  if (!userRecord) {
+    return res.status(400).json({ success: false, message: 'User record could not be located.' });
+  }
+
+  const token = `jwt-${Date.now()}-${userRecord.id}`;
+  res.json({
+    success: true,
+    token,
     user: {
-      id: `user-${Date.now()}`,
-      email,
-      name,
-      color: '#6366F1',
+      id: userRecord.id,
+      username: userRecord.username,
+      name: userRecord.name,
+      email: userRecord.email,
+      color: userRecord.color,
+      avatarUrl: userRecord.avatarUrl,
     },
+    message: 'Account verified and authenticated successfully!',
+  });
+});
+
+// Login with Email or Username + Password
+app.post('/api/v1/auth/login', (req, res) => {
+  const { identifier, email, password } = req.body;
+  const loginKey = (identifier || email || '').trim().toLowerCase();
+
+  if (!loginKey || !password) {
+    return res.status(400).json({ success: false, message: 'Username/email and password are required' });
+  }
+
+  const user = Array.from(serverDb.users.values()).find(
+    (u) =>
+      u.email.toLowerCase() === loginKey ||
+      u.username?.toLowerCase() === loginKey
+  );
+
+  if (!user) {
+    return res.status(401).json({ success: false, message: 'Account not found with this username or email' });
+  }
+
+  if (user.password !== password) {
+    return res.status(401).json({ success: false, message: 'Incorrect password' });
+  }
+
+  const token = `jwt-${Date.now()}-${user.id}`;
+  res.json({
+    success: true,
+    token,
+    user: {
+      id: user.id,
+      username: user.username,
+      name: user.name,
+      email: user.email,
+      color: user.color,
+      avatarUrl: user.avatarUrl,
+    },
+    message: 'Signed in successfully',
+  });
+});
+
+// Get current session info
+app.get('/api/v1/auth/me', (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  const token = authHeader.replace('Bearer ', '');
+  const userId = token.split('-')[2];
+  const user = userId ? serverDb.users.get(userId) : null;
+  if (!user) {
+    return res.status(401).json({ error: 'Session invalid or expired' });
+  }
+  res.json({
+    id: user.id,
+    username: user.username,
+    name: user.name,
+    email: user.email,
+    color: user.color,
+    avatarUrl: user.avatarUrl,
   });
 });
 
