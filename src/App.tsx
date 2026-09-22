@@ -20,6 +20,7 @@ import {
   MenuItem,
   Avatar,
   Badge,
+  CircularProgress,
 } from '@mui/material';
 import {
   Menu as MenuIcon,
@@ -100,15 +101,28 @@ export const App: React.FC = () => {
   const [folders, setFolders] = useState<Folder[]>([]);
   const [notes, setNotes] = useState<Note[]>([]);
   const [tags, setTags] = useState<Tag[]>([]);
-  // Read initial route from URL parameters
+  // Read initial route from URL parameters (including ?share= and ?note=)
   const initialRoute = useMemo(() => {
-    if (typeof window === 'undefined') return { view: 'editor' as const, noteId: null as string | null };
+    if (typeof window === 'undefined') {
+      return { view: 'editor' as const, noteId: null as string | null, shareToken: null as string | null };
+    }
     const params = new URLSearchParams(window.location.search);
     const viewParam = params.get('view');
-    const noteParam = params.get('note');
+    const shareParam = params.get('share');
+    let noteParam = params.get('note');
+
+    // If user opened a shared link (e.g. ?share=note-37361f46 or ?share=37361f46)
+    if (!noteParam && shareParam) {
+      if (shareParam.startsWith('note-')) {
+        noteParam = shareParam;
+      } else if (!shareParam.startsWith('ws-')) {
+        noteParam = `note-${shareParam}`;
+      }
+    }
+
     const view: 'editor' | 'graph' | 'whiteboard' | 'games' =
       viewParam === 'graph' || viewParam === 'whiteboard' || viewParam === 'games' ? viewParam : 'editor';
-    return { view, noteId: noteParam };
+    return { view, noteId: noteParam, shareToken: shareParam };
   }, []);
 
   const [selectedNoteId, setSelectedNoteId] = useState<string | null>(initialRoute.noteId);
@@ -273,14 +287,83 @@ export const App: React.FC = () => {
 
       setWorkspaces(ws);
       setFolders(flds);
-      setNotes(nts);
       setTags(tgs);
 
-      if (nts.length > 0) {
-        const matched = initialRoute.noteId ? nts.find((n) => n.id === initialRoute.noteId) : null;
-        const initialNote = matched ? matched.id : nts[0].id;
-        setSelectedNoteId(initialNote);
-        navigateTo(initialRoute.view, initialNote, true);
+      let activeNotesList = [...nts];
+      let selectedId: string | null = null;
+
+      if (initialRoute.noteId) {
+        let matched = activeNotesList.find((n) => n.id === initialRoute.noteId);
+
+        // If note is not in local IndexedDB (e.g. opened in incognito or new browser), fetch from cloud/share API!
+        if (!matched) {
+          try {
+            const tokenToTry = initialRoute.shareToken || initialRoute.noteId;
+
+            // 1. Try share endpoint
+            const shareRes = await fetch(`/api/v1/share?token=${encodeURIComponent(tokenToTry)}`);
+            if (shareRes.ok) {
+              const data = await shareRes.json();
+              if (data && data.note) {
+                matched = data.note;
+              }
+            }
+
+            // 2. Try direct notes endpoint
+            if (!matched) {
+              const noteRes = await fetch(`/api/v1/notes?id=${encodeURIComponent(initialRoute.noteId)}`);
+              if (noteRes.ok) {
+                const noteData = await noteRes.json();
+                if (noteData && noteData.id) {
+                  matched = noteData;
+                }
+              }
+            }
+
+            // If note was found on cloud/server, persist into local IndexedDB
+            if (matched) {
+              await db.notes.put(matched);
+
+              // Ensure folder exists or create placeholder folder
+              if (matched.folderId) {
+                const existingFolder = await db.folders.get(matched.folderId);
+                if (!existingFolder) {
+                  const newFolder: Folder = {
+                    id: matched.folderId,
+                    workspaceId: matched.workspaceId || ws[0]?.id || 'ws-default-nexus',
+                    name: (matched as any).folderName || 'Shared Notes',
+                    order: 0,
+                    createdAt: matched.createdAt || new Date().toISOString(),
+                    updatedAt: matched.updatedAt || new Date().toISOString(),
+                  };
+                  await db.folders.put(newFolder);
+                  setFolders((prev) => [newFolder, ...prev]);
+                }
+              }
+
+              activeNotesList = [matched, ...activeNotesList.filter((n) => n.id !== matched!.id)];
+            }
+          } catch (err) {
+            console.warn('[App] Could not fetch shared note from server on init:', err);
+          }
+        }
+
+        if (matched) {
+          selectedId = matched.id;
+        } else {
+          selectedId = initialRoute.noteId;
+        }
+      }
+
+      setNotes(activeNotesList);
+
+      if (!selectedId && activeNotesList.length > 0) {
+        selectedId = activeNotesList[0].id;
+      }
+
+      if (selectedId) {
+        setSelectedNoteId(selectedId);
+        navigateTo(initialRoute.view, selectedId, true);
       }
     }
     init();
@@ -303,6 +386,40 @@ export const App: React.FC = () => {
     };
   }, []);
 
+  // Fetch missing note if selectedNoteId changes to a note not yet in local state
+  useEffect(() => {
+    if (!selectedNoteId) return;
+    const exists = notes.some((n) => n.id === selectedNoteId);
+    if (!exists) {
+      async function fetchMissingNote() {
+        try {
+          const shareRes = await fetch(`/api/v1/share?token=${encodeURIComponent(selectedNoteId!)}`);
+          if (shareRes.ok) {
+            const data = await shareRes.json();
+            if (data && data.note) {
+              await db.notes.put(data.note);
+              setNotes((prev) => [data.note, ...prev.filter((n) => n.id !== data.note.id)]);
+              return;
+            }
+          }
+
+          const noteRes = await fetch(`/api/v1/notes?id=${encodeURIComponent(selectedNoteId!)}`);
+          if (noteRes.ok) {
+            const noteData = await noteRes.json();
+            if (noteData && noteData.id) {
+              await db.notes.put(noteData);
+              setNotes((prev) => [noteData, ...prev.filter((n) => n.id !== noteData.id)]);
+              return;
+            }
+          }
+        } catch (err) {
+          console.warn('[App] Could not fetch remote note:', err);
+        }
+      }
+      fetchMissingNote();
+    }
+  }, [selectedNoteId, notes]);
+
   // Load Note Specific Details (Comments, Revisions, Attachments)
   useEffect(() => {
     if (!selectedNoteId) return;
@@ -321,7 +438,10 @@ export const App: React.FC = () => {
 
   // Active Selected Note
   const currentNote = useMemo(() => {
-    return notes.find((n) => n.id === selectedNoteId) || notes[0] || null;
+    if (selectedNoteId) {
+      return notes.find((n) => n.id === selectedNoteId) || null;
+    }
+    return notes[0] || null;
   }, [notes, selectedNoteId]);
 
   const currentFolder = useMemo(() => {
@@ -1423,6 +1543,15 @@ export const App: React.FC = () => {
 
           {/* Main Stage Content */}
           <Box sx={{ flex: 1, overflowY: 'auto', p: { xs: 2, md: 4 }, bgcolor: theme.palette.background.default }}>
+            {activeView === 'editor' && !currentNote && selectedNoteId && (
+              <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: 400, gap: 2 }}>
+                <CircularProgress size={36} color="primary" />
+                <Typography variant="body1" sx={{ fontWeight: 600, color: 'text.secondary' }}>
+                  Opening shared document...
+                </Typography>
+              </Box>
+            )}
+
             {activeView === 'editor' && currentNote && (
               currentNote.isLocked && !unlockedVaults[currentNote.id] ? (
                 <NoteVaultLockScreen

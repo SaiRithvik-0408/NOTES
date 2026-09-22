@@ -60,12 +60,25 @@ app.get('/api/v1/workspaces', (req, res) => {
 
 // Notes CRUD
 app.get('/api/v1/notes', (req, res) => {
+  const noteId = (req.query.id as string) || (req.query.noteId as string);
+  if (noteId) {
+    const note = serverDb.notes.get(noteId);
+    if (!note) return res.status(404).json({ error: 'Note not found' });
+    return res.json(note);
+  }
   const list = Array.from(serverDb.notes.values());
   res.json(list);
 });
 
+app.get('/api/v1/notes/:id', (req, res) => {
+  const note = serverDb.notes.get(req.params.id);
+  if (!note) return res.status(404).json({ error: 'Note not found' });
+  res.json(note);
+});
+
 app.post('/api/v1/notes', (req, res) => {
   const note = req.body;
+  if (!note || !note.id) return res.status(400).json({ error: 'Invalid note payload' });
   serverDb.notes.set(note.id, note);
   res.status(201).json(note);
 });
@@ -436,24 +449,58 @@ app.post('/api/v1/workspaces/:id/invite', (req, res) => {
 
 // Share Links Store
 const shareLinksStore = new Map<string, any>();
-app.post('/api/v1/share/create', (req, res) => {
-  const { noteId, workspaceId, accessLevel } = req.body;
-  const token = `share-${Math.random().toString(36).substring(2, 10)}`;
+
+app.post(['/api/v1/share/create', '/api/v1/share'], (req, res) => {
+  const { token, noteId, workspaceId, accessLevel, noteData } = req.body;
+  const shareToken = token || (noteId ? `note-${noteId.replace('note-', '')}` : `share-${Math.random().toString(36).substring(2, 10)}`);
+  
   const record = {
-    token,
-    noteId,
-    workspaceId,
+    token: shareToken,
+    noteId: noteId || noteData?.id,
+    workspaceId: workspaceId || noteData?.workspaceId || 'ws-default-nexus',
     accessLevel: accessLevel || 'view',
+    noteData: noteData || (noteId ? serverDb.notes.get(noteId) : null),
     createdAt: new Date().toISOString(),
   };
-  shareLinksStore.set(token, record);
-  res.json(record);
+
+  shareLinksStore.set(shareToken, record);
+  if (record.noteId) {
+    shareLinksStore.set(record.noteId, record);
+  }
+
+  if (noteData && noteData.id) {
+    serverDb.notes.set(noteData.id, noteData);
+  }
+
+  res.json({ success: true, record });
 });
 
-app.get('/api/v1/share/:token', (req, res) => {
-  const record = shareLinksStore.get(req.params.token);
-  if (!record) return res.status(404).json({ error: 'Share link not found or expired' });
-  res.json(record);
+app.get(['/api/v1/share/:token', '/api/v1/share'], (req, res) => {
+  const token = req.params.token || (req.query.token as string) || (req.query.share as string) || (req.query.id as string);
+  if (!token) return res.status(400).json({ error: 'Missing share token or note id' });
+
+  const record = shareLinksStore.get(token);
+  if (record && record.noteData) {
+    return res.json({
+      success: true,
+      note: record.noteData,
+      accessLevel: record.accessLevel || 'view',
+      workspaceId: record.workspaceId || 'ws-default-nexus',
+    });
+  }
+
+  // Direct note lookup fallback
+  const directNote = serverDb.notes.get(token);
+  if (directNote) {
+    return res.json({
+      success: true,
+      note: directNote,
+      accessLevel: 'view',
+      workspaceId: directNote.workspaceId || 'ws-default-nexus',
+    });
+  }
+
+  return res.status(404).json({ error: 'Share link not found or expired' });
 });
 
 // Chess Email Invite

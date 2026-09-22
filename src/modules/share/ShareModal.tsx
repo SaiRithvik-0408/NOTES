@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Dialog,
   DialogTitle,
@@ -78,7 +78,32 @@ export const ShareModal: React.FC<ShareModalProps> = ({
 
   // Generate shareable link
   const shareToken = note ? `note-${note.id.replace('note-', '')}` : `ws-${workspace.id}`;
-  const shareUrl = `${window.location.origin}/?share=${shareToken}&access=${linkAccessLevel}`;
+  const shareUrl = `${window.location.origin}/?share=${shareToken}${note ? `&note=${note.id}` : ''}&access=${linkAccessLevel}`;
+
+  // Ensure shared note is published to backend whenever modal is open
+  useEffect(() => {
+    if (!open || !note) return;
+
+    // 1. Post to share endpoint
+    fetch('/api/v1/share', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        token: shareToken,
+        noteId: note.id,
+        workspaceId: workspace.id,
+        accessLevel: linkAccessLevel,
+        noteData: note,
+      }),
+    }).catch(() => {});
+
+    // 2. Also ensure note is saved in notes endpoint
+    fetch('/api/v1/notes', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(note),
+    }).catch(() => {});
+  }, [open, note, shareToken, linkAccessLevel, workspace.id]);
 
   const handleSendInvite = (e: React.FormEvent) => {
     e.preventDefault();
@@ -93,6 +118,20 @@ export const ShareModal: React.FC<ShareModalProps> = ({
     setCopied(true);
     confetti({ particleCount: 25, spread: 50 });
     setTimeout(() => setCopied(false), 2500);
+
+    if (note) {
+      fetch('/api/v1/share', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          token: shareToken,
+          noteId: note.id,
+          workspaceId: workspace.id,
+          accessLevel: linkAccessLevel,
+          noteData: note,
+        }),
+      }).catch(() => {});
+    }
   };
 
   return (
