@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect, useCallback } from 'react';
 import {
   Box,
   Paper,
@@ -43,13 +43,26 @@ export const Whiteboard: React.FC<{ noteId?: string }> = ({ noteId }) => {
   const [color, setColor] = useState('#6366F1');
   const [lineWidth, setLineWidth] = useState(3);
   const [shapes, setShapes] = useState<Shape[]>([]);
-  const [isDrawing, setIsDrawing] = useState(false);
-  const [currentPoints, setCurrentPoints] = useState<Point[]>([]);
+  const [renderTick, setRenderTick] = useState(0);
+
+  // Use refs for drawing state so native event handlers always see current values
+  const isDrawingRef = useRef(false);
+  const currentPointsRef = useRef<Point[]>([]);
+  const toolRef = useRef(tool);
+  const colorRef = useRef(color);
+  const lineWidthRef = useRef(lineWidth);
+  const shapesRef = useRef(shapes);
+
+  // Keep refs in sync with state
+  useEffect(() => { toolRef.current = tool; }, [tool]);
+  useEffect(() => { colorRef.current = color; }, [color]);
+  useEffect(() => { lineWidthRef.current = lineWidth; }, [lineWidth]);
+  useEffect(() => { shapesRef.current = shapes; }, [shapes]);
 
   const colors = ['#6366F1', '#A855F7', '#EC4899', '#10B981', '#F59E0B', '#F8FAFC'];
 
   // Redraw all shapes on canvas
-  const redraw = () => {
+  const redrawFn = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
@@ -75,7 +88,7 @@ export const Whiteboard: React.FC<{ noteId?: string }> = ({ noteId }) => {
     }
 
     // Draw saved shapes
-    shapes.forEach((shape) => {
+    shapesRef.current.forEach((shape) => {
       ctx.strokeStyle = shape.color;
       ctx.lineWidth = shape.lineWidth;
       ctx.lineCap = 'round';
@@ -108,44 +121,45 @@ export const Whiteboard: React.FC<{ noteId?: string }> = ({ noteId }) => {
     });
 
     // Draw active drawing shape
-    if (isDrawing && currentPoints.length > 0) {
-      ctx.strokeStyle = color;
-      ctx.lineWidth = lineWidth;
+    const cp = currentPointsRef.current;
+    if (isDrawingRef.current && cp.length > 0) {
+      ctx.strokeStyle = colorRef.current;
+      ctx.lineWidth = lineWidthRef.current;
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
 
-      if (tool === 'brush') {
+      if (toolRef.current === 'brush') {
         ctx.beginPath();
-        ctx.moveTo(currentPoints[0].x, currentPoints[0].y);
-        for (let i = 1; i < currentPoints.length; i++) {
-          ctx.lineTo(currentPoints[i].x, currentPoints[i].y);
+        ctx.moveTo(cp[0].x, cp[0].y);
+        for (let i = 1; i < cp.length; i++) {
+          ctx.lineTo(cp[i].x, cp[i].y);
         }
         ctx.stroke();
-      } else if (tool === 'rectangle' && currentPoints.length >= 2) {
-        const start = currentPoints[0];
-        const end = currentPoints[currentPoints.length - 1];
+      } else if (toolRef.current === 'rectangle' && cp.length >= 2) {
+        const start = cp[0];
+        const end = cp[cp.length - 1];
         ctx.strokeRect(start.x, start.y, end.x - start.x, end.y - start.y);
-      } else if (tool === 'circle' && currentPoints.length >= 2) {
-        const start = currentPoints[0];
-        const end = currentPoints[currentPoints.length - 1];
+      } else if (toolRef.current === 'circle' && cp.length >= 2) {
+        const start = cp[0];
+        const end = cp[cp.length - 1];
         const radius = Math.sqrt(Math.pow(end.x - start.x, 2) + Math.pow(end.y - start.y, 2));
         ctx.beginPath();
         ctx.arc(start.x, start.y, radius, 0, 2 * Math.PI);
         ctx.stroke();
-      } else if (tool === 'line' && currentPoints.length >= 2) {
-        const start = currentPoints[0];
-        const end = currentPoints[currentPoints.length - 1];
+      } else if (toolRef.current === 'line' && cp.length >= 2) {
+        const start = cp[0];
+        const end = cp[cp.length - 1];
         ctx.beginPath();
         ctx.moveTo(start.x, start.y);
         ctx.lineTo(end.x, end.y);
         ctx.stroke();
       }
     }
-  };
+  }, [theme.palette.mode]);
 
   useEffect(() => {
-    redraw();
-  }, [shapes, isDrawing, currentPoints, theme.palette.mode]);
+    redrawFn();
+  }, [shapes, renderTick, redrawFn]);
 
   // Adjust canvas size to parent container
   useEffect(() => {
@@ -154,56 +168,115 @@ export const Whiteboard: React.FC<{ noteId?: string }> = ({ noteId }) => {
     const updateSize = () => {
       canvas.width = canvas.parentElement?.clientWidth || 800;
       canvas.height = canvas.parentElement?.clientHeight || 550;
-      redraw();
+      redrawFn();
     };
     updateSize();
     window.addEventListener('resize', updateSize);
     return () => window.removeEventListener('resize', updateSize);
-  }, []);
+  }, [redrawFn]);
 
-  const getCanvasCoords = (e: React.MouseEvent<HTMLCanvasElement>): Point => {
-    const canvas = canvasRef.current;
-    if (!canvas) return { x: 0, y: 0 };
-    const rect = canvas.getBoundingClientRect();
-    return {
-      x: e.clientX - rect.left,
-      y: e.clientY - rect.top,
-    };
+  // --- Shared drawing logic ---
+  const startDrawing = (point: Point) => {
+    isDrawingRef.current = true;
+    currentPointsRef.current = [point];
+    setRenderTick((t) => t + 1);
   };
 
-  const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    const point = getCanvasCoords(e);
-    setIsDrawing(true);
-    setCurrentPoints([point]);
-  };
-
-  const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!isDrawing) return;
-    const point = getCanvasCoords(e);
-    if (tool === 'brush') {
-      setCurrentPoints((prev) => [...prev, point]);
+  const continueDrawing = (point: Point) => {
+    if (!isDrawingRef.current) return;
+    if (toolRef.current === 'brush') {
+      currentPointsRef.current = [...currentPointsRef.current, point];
     } else {
-      setCurrentPoints((prev) => [prev[0], point]);
+      currentPointsRef.current = [currentPointsRef.current[0], point];
     }
+    setRenderTick((t) => t + 1);
   };
 
-  const handleMouseUp = () => {
-    if (!isDrawing) return;
-    setIsDrawing(false);
-    if (currentPoints.length > 1) {
+  const finishDrawing = () => {
+    if (!isDrawingRef.current) return;
+    isDrawingRef.current = false;
+    const cp = currentPointsRef.current;
+    if (cp.length > 1) {
       setShapes((prev) => [
         ...prev,
         {
           id: `shape-${Date.now()}`,
-          type: tool,
-          points: currentPoints,
-          color,
-          lineWidth,
+          type: toolRef.current,
+          points: cp,
+          color: colorRef.current,
+          lineWidth: lineWidthRef.current,
         },
       ]);
     }
-    setCurrentPoints([]);
+    currentPointsRef.current = [];
+    setRenderTick((t) => t + 1);
   };
+
+  // --- Mouse event handlers (React synthetic — fine for desktop) ---
+  const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    startDrawing({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+  };
+
+  const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    continueDrawing({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+  };
+
+  const handleMouseUp = () => {
+    finishDrawing();
+  };
+
+  // --- Native touch event listeners with { passive: false } ---
+  // React synthetic onTouch* events are registered as passive by default,
+  // which silently ignores preventDefault() — the browser scrolls instead of drawing.
+  // Native listeners with passive:false fix this.
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const getCoordsFromTouch = (e: TouchEvent): Point => {
+      const rect = canvas.getBoundingClientRect();
+      const touch = e.touches[0] || e.changedTouches[0];
+      return { x: touch.clientX - rect.left, y: touch.clientY - rect.top };
+    };
+
+    const onTouchStart = (e: TouchEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const point = getCoordsFromTouch(e);
+      startDrawing(point);
+    };
+
+    const onTouchMove = (e: TouchEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const point = getCoordsFromTouch(e);
+      continueDrawing(point);
+    };
+
+    const onTouchEnd = (e: TouchEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      finishDrawing();
+    };
+
+    canvas.addEventListener('touchstart', onTouchStart, { passive: false });
+    canvas.addEventListener('touchmove', onTouchMove, { passive: false });
+    canvas.addEventListener('touchend', onTouchEnd, { passive: false });
+    canvas.addEventListener('touchcancel', onTouchEnd, { passive: false });
+
+    return () => {
+      canvas.removeEventListener('touchstart', onTouchStart);
+      canvas.removeEventListener('touchmove', onTouchMove);
+      canvas.removeEventListener('touchend', onTouchEnd);
+      canvas.removeEventListener('touchcancel', onTouchEnd);
+    };
+  }, []);
 
   const handleUndo = () => {
     setShapes((prev) => prev.slice(0, -1));
@@ -316,7 +389,7 @@ export const Whiteboard: React.FC<{ noteId?: string }> = ({ noteId }) => {
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseUp}
-        style={{ width: '100%', height: '100%', cursor: 'crosshair', display: 'block' }}
+        style={{ width: '100%', height: '100%', cursor: 'crosshair', display: 'block', touchAction: 'none' }}
       />
     </Box>
   );
