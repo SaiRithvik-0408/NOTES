@@ -411,9 +411,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     </ListItemIcon>
                     <ListItemText
                       primary={
-                        <Typography variant="body2" noWrap sx={{ fontSize: '0.8rem', fontWeight: selectedNoteId === note.id ? 600 : 400 }}>
-                          {note.title}
-                        </Typography>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.6, overflow: 'hidden' }}>
+                          <Typography variant="body2" noWrap sx={{ fontSize: '0.8rem', fontWeight: selectedNoteId === note.id ? 600 : 400 }}>
+                            {note.title}
+                          </Typography>
+                          {note.isLocked && (
+                            <Tooltip title="Encrypted Vault Note">
+                              <LockOutlined sx={{ fontSize: 13, color: '#F59E0B', flexShrink: 0 }} />
+                            </Tooltip>
+                          )}
+                        </Box>
                       }
                     />
                   </Box>
@@ -556,9 +563,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
                           </ListItemIcon>
                           <ListItemText
                             primary={
-                              <Typography variant="body2" noWrap sx={{ fontSize: '0.8rem', fontWeight: selectedNoteId === note.id ? 600 : 400 }}>
-                                {note.title}
-                              </Typography>
+                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.6, overflow: 'hidden' }}>
+                                <Typography variant="body2" noWrap sx={{ fontSize: '0.8rem', fontWeight: selectedNoteId === note.id ? 600 : 400 }}>
+                                  {note.title}
+                                </Typography>
+                                {note.isLocked && (
+                                  <Tooltip title="Encrypted Vault Note">
+                                    <LockOutlined sx={{ fontSize: 13, color: '#F59E0B', flexShrink: 0 }} />
+                                  </Tooltip>
+                                )}
+                              </Box>
                             }
                           />
                         </Box>
@@ -619,9 +633,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     </ListItemIcon>
                     <ListItemText
                       primary={
-                        <Typography variant="body2" noWrap sx={{ fontSize: '0.8rem', fontWeight: selectedNoteId === note.id ? 600 : 400 }}>
-                          {note.title}
-                        </Typography>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.6, overflow: 'hidden' }}>
+                          <Typography variant="body2" noWrap sx={{ fontSize: '0.8rem', fontWeight: selectedNoteId === note.id ? 600 : 400 }}>
+                            {note.title}
+                          </Typography>
+                          {note.isLocked && (
+                            <Tooltip title="Encrypted Vault Note">
+                              <LockOutlined sx={{ fontSize: 13, color: '#F59E0B', flexShrink: 0 }} />
+                            </Tooltip>
+                          )}
+                        </Box>
                       }
                     />
                   </Box>

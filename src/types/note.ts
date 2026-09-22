@@ -118,6 +118,9 @@ export interface Note {
   backlinks: string[]; // IDs of linked notes
   version: number;
   lastSyncedAt?: string;
+  isLocked?: boolean;
+  lockHint?: string;
+  encryptedPayload?: string; // Serialized AES-256-GCM EncryptedVaultPayload
   createdAt: string;
   updatedAt: string;
 }

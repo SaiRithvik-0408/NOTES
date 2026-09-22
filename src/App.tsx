@@ -35,9 +35,10 @@ import {
   FolderOpen,
   HubOutlined,
   BrushOutlined,
-  DescriptionOutlined,
   Visibility,
   LockOutlined,
+  LockOpenOutlined,
+  Security,
   PersonAddOutlined,
   ArrowBack,
   CreateNewFolderOutlined,
@@ -53,6 +54,9 @@ import { exportNoteToMarkdown, exportNoteToPdf, parseMarkdownFile } from './util
 import { usePwaInstall } from './utils/pwaInstall';
 import { createNoteSnapshot } from './utils/revisionManager';
 import { useNotePresence } from './utils/presenceManager';
+import { encryptNoteContent } from './utils/cryptoVault';
+import { NoteVaultLockScreen } from './components/vault/NoteVaultLockScreen';
+import { LockNoteDialog } from './components/vault/LockNoteDialog';
 
 
 
@@ -242,7 +246,9 @@ export const App: React.FC = () => {
   // Real-time Collaborator Presence
   const { activePeers, broadcastEditing } = useNotePresence(selectedNoteId, currentUser);
 
-
+  // End-to-End Encrypted Vault Notes
+  const [unlockedVaults, setUnlockedVaults] = useState<Record<string, { content: string; passphrase: string }>>({});
+  const [lockDialogOpen, setLockDialogOpen] = useState(false);
 
   // Note-scoped subdata
   const [comments, setComments] = useState<NoteComment[]>([]);
@@ -486,15 +492,93 @@ export const App: React.FC = () => {
   // Export and Import Handlers
   const handleExportMarkdown = useCallback(() => {
     if (currentNote) {
-      exportNoteToMarkdown(currentNote);
+      const noteToExport = currentNote.isLocked && unlockedVaults[currentNote.id]
+        ? { ...currentNote, content: unlockedVaults[currentNote.id].content }
+        : currentNote;
+      exportNoteToMarkdown(noteToExport);
     }
-  }, [currentNote]);
+  }, [currentNote, unlockedVaults]);
 
   const handleExportPdf = useCallback(() => {
     if (currentNote) {
-      exportNoteToPdf(currentNote);
+      const noteToExport = currentNote.isLocked && unlockedVaults[currentNote.id]
+        ? { ...currentNote, content: unlockedVaults[currentNote.id].content }
+        : currentNote;
+      exportNoteToPdf(noteToExport);
     }
-  }, [currentNote]);
+  }, [currentNote, unlockedVaults]);
+
+  // Vault Note Handlers
+  const handleUnlockNote = (noteId: string, decryptedContent: string, passphrase: string) => {
+    setUnlockedVaults((prev) => ({
+      ...prev,
+      [noteId]: { content: decryptedContent, passphrase },
+    }));
+  };
+
+  const handleLockNoteNow = (noteId: string) => {
+    setUnlockedVaults((prev) => {
+      const copy = { ...prev };
+      delete copy[noteId];
+      return copy;
+    });
+  };
+
+  const handleApplyLock = async (passphrase: string, hint?: string) => {
+    if (!currentNote || isReadOnly) return;
+    const contentToEncrypt = unlockedVaults[currentNote.id]?.content || currentNote.content;
+    const payload = await encryptNoteContent(contentToEncrypt, passphrase, hint);
+    const serializedPayload = JSON.stringify(payload);
+    const now = new Date().toISOString();
+
+    const updatedNote: Note = {
+      ...currentNote,
+      isLocked: true,
+      lockHint: hint,
+      encryptedPayload: serializedPayload,
+      content: serializedPayload,
+      plainText: '[Protected Vault Note]',
+      updatedAt: now,
+      version: currentNote.version + 1,
+    };
+
+    setUnlockedVaults((prev) => ({
+      ...prev,
+      [currentNote.id]: { content: contentToEncrypt, passphrase },
+    }));
+
+    setNotes((prev) => prev.map((n) => (n.id === currentNote.id ? updatedNote : n)));
+    await db.notes.put(updatedNote);
+    await mutationQueue.enqueue('note', updatedNote.id, 'update', updatedNote, currentNote.version);
+    confetti({ particleCount: 30, spread: 60, origin: { y: 0.6 } });
+  };
+
+  const handleRemoveLock = async () => {
+    if (!currentNote || isReadOnly) return;
+    const decryptedContent = unlockedVaults[currentNote.id]?.content || currentNote.content;
+    const now = new Date().toISOString();
+
+    const updatedNote: Note = {
+      ...currentNote,
+      isLocked: false,
+      lockHint: undefined,
+      encryptedPayload: undefined,
+      content: decryptedContent,
+      plainText: decryptedContent.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim(),
+      updatedAt: now,
+      version: currentNote.version + 1,
+    };
+
+    setUnlockedVaults((prev) => {
+      const copy = { ...prev };
+      delete copy[currentNote.id];
+      return copy;
+    });
+
+    setNotes((prev) => prev.map((n) => (n.id === currentNote.id ? updatedNote : n)));
+    await db.notes.put(updatedNote);
+    await mutationQueue.enqueue('note', updatedNote.id, 'update', updatedNote, currentNote.version);
+  };
 
   const handleImportFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -581,6 +665,37 @@ export const App: React.FC = () => {
       if (!currentNote || isReadOnly) return;
 
       const now = new Date().toISOString();
+
+      if (currentNote.isLocked) {
+        const vaultData = unlockedVaults[currentNote.id];
+        if (vaultData) {
+          // Update in-memory decrypted content
+          setUnlockedVaults((prev) => ({
+            ...prev,
+            [currentNote.id]: { ...vaultData, content: html },
+          }));
+
+          // Re-encrypt client side before writing to disk or network
+          const payload = await encryptNoteContent(html, vaultData.passphrase, currentNote.lockHint);
+          const serializedPayload = JSON.stringify(payload);
+
+          const updatedNote: Note = {
+            ...currentNote,
+            content: serializedPayload,
+            encryptedPayload: serializedPayload,
+            plainText: '[Protected Vault Note]',
+            updatedAt: now,
+            version: currentNote.version + 1,
+          };
+
+          setNotes((prev) => prev.map((n) => (n.id === currentNote.id ? updatedNote : n)));
+          broadcastEditing(true);
+          await db.notes.put(updatedNote);
+          await mutationQueue.enqueue('note', updatedNote.id, 'update', updatedNote, currentNote.version);
+          return;
+        }
+      }
+
       const updatedNote: Note = {
         ...currentNote,
         content: html,
@@ -601,7 +716,7 @@ export const App: React.FC = () => {
       // Enqueue in mutation queue
       await mutationQueue.enqueue('note', updatedNote.id, 'update', updatedNote, currentNote.version);
     },
-    [currentNote, isReadOnly]
+    [currentNote, isReadOnly, unlockedVaults, broadcastEditing]
   );
 
   const handleUpdateTitle = async (newTitle: string) => {
@@ -1079,6 +1194,73 @@ export const App: React.FC = () => {
                     </MenuItem>
                   </Menu>
 
+                  {/* Lock / Vault Encryption Button */}
+                  {currentNote.isLocked ? (
+                    unlockedVaults[currentNote.id] ? (
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                        <Tooltip title="Lock note now (clear session key)">
+                          <Button
+                            size="small"
+                            variant="outlined"
+                            startIcon={<LockOpenOutlined sx={{ fontSize: '15px !important' }} />}
+                            onClick={() => handleLockNoteNow(currentNote.id)}
+                            sx={{
+                              py: 0.2,
+                              px: 1,
+                              borderRadius: '8px',
+                              fontSize: '0.75rem',
+                              textTransform: 'none',
+                              color: '#F59E0B',
+                              borderColor: 'rgba(245, 158, 11, 0.4)',
+                              bgcolor: 'rgba(245, 158, 11, 0.08)',
+                              '&:hover': {
+                                borderColor: '#F59E0B',
+                                bgcolor: 'rgba(245, 158, 11, 0.16)',
+                              },
+                            }}
+                          >
+                            Lock Vault
+                          </Button>
+                        </Tooltip>
+                        <Tooltip title="Security & Password Settings">
+                          <IconButton
+                            size="small"
+                            onClick={() => setLockDialogOpen(true)}
+                            sx={{ color: '#F59E0B' }}
+                          >
+                            <Security fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
+                      </Box>
+                    ) : (
+                      <Tooltip title="Note is encrypted and locked with AES-256-GCM">
+                        <Chip
+                          icon={<LockOutlined sx={{ fontSize: '14px !important', color: '#F59E0B !important' }} />}
+                          label="Locked Vault"
+                          size="small"
+                          sx={{
+                            bgcolor: 'rgba(245, 158, 11, 0.15)',
+                            color: '#FBBF24',
+                            fontWeight: 600,
+                            fontSize: '0.75rem',
+                            border: '1px solid rgba(245, 158, 11, 0.3)',
+                          }}
+                        />
+                      </Tooltip>
+                    )
+                  ) : (
+                    <Tooltip title="Encrypt & Lock Note with Password (AES-256-GCM)">
+                      <IconButton
+                        size="small"
+                        disabled={isReadOnly}
+                        onClick={() => setLockDialogOpen(true)}
+                        sx={{ '&:hover': { color: '#F59E0B' } }}
+                      >
+                        <LockOutlined fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
+                  )}
+
                   <Tooltip title={currentNote.isPinned ? 'Unpin note' : 'Pin note'}>
                     <IconButton
                       size="small"
@@ -1166,69 +1348,77 @@ export const App: React.FC = () => {
           {/* Main Stage Content */}
           <Box sx={{ flex: 1, overflowY: 'auto', p: { xs: 2, md: 4 }, bgcolor: theme.palette.background.default }}>
             {activeView === 'editor' && currentNote && (
-              <Box sx={{ maxWidth: 840, mx: 'auto' }}>
-                {/* Note Icon & Title Header */}
-                <Box sx={{ mb: 3 }}>
-                  <Typography variant="h3" sx={{ mb: 1 }}>
-                    {currentNote.icon || '📝'}
-                  </Typography>
-                  <TextField
-                    fullWidth
-                    variant="standard"
-                    value={currentNote.title}
-                    onChange={(e) => handleUpdateTitle(e.target.value)}
-                    placeholder="Untitled Note"
-                    disabled={isReadOnly}
-                    InputProps={{
-                      disableUnderline: true,
-                      sx: {
-                        fontFamily: theme.typography.h2.fontFamily,
-                        fontSize: { xs: '1.8rem', md: '2.4rem' },
-                        fontWeight: 800,
-                        letterSpacing: '-0.03em',
-                        color: 'text.primary',
-                        opacity: isReadOnly ? 0.85 : 1,
-                      },
+              currentNote.isLocked && !unlockedVaults[currentNote.id] ? (
+                <NoteVaultLockScreen
+                  note={currentNote}
+                  onUnlocked={(decrypted, pass) => handleUnlockNote(currentNote.id, decrypted, pass)}
+                />
+              ) : (
+                <Box sx={{ maxWidth: 840, mx: 'auto' }}>
+                  {/* Note Icon & Title Header */}
+                  <Box sx={{ mb: 3 }}>
+                    <Typography variant="h3" sx={{ mb: 1 }}>
+                      {currentNote.icon || '📝'}
+                    </Typography>
+                    <TextField
+                      fullWidth
+                      variant="standard"
+                      value={currentNote.title}
+                      onChange={(e) => handleUpdateTitle(e.target.value)}
+                      placeholder="Untitled Note"
+                      disabled={isReadOnly}
+                      InputProps={{
+                        disableUnderline: true,
+                        sx: {
+                          fontFamily: theme.typography.h2.fontFamily,
+                          fontSize: { xs: '1.8rem', md: '2.4rem' },
+                          fontWeight: 800,
+                          letterSpacing: '-0.03em',
+                          color: 'text.primary',
+                          opacity: isReadOnly ? 0.85 : 1,
+                        },
+                      }}
+                    />
+
+                    {/* Metadata Chips: Tags & Last Edited */}
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 1.5, flexWrap: 'wrap' }}>
+                      <Chip
+                        icon={<FolderOpen sx={{ fontSize: 14 }} />}
+                        label={currentFolder ? currentFolder.name : 'Workspace'}
+                        size="small"
+                        variant="outlined"
+                        sx={{ fontSize: '0.72rem', height: 22 }}
+                      />
+                      {currentNote.tags.map((tag) => (
+                        <Chip
+                          key={tag}
+                          label={`#${tag}`}
+                          size="small"
+                          sx={{ fontSize: '0.72rem', height: 22, bgcolor: 'rgba(99, 102, 241, 0.15)', color: '#818CF8' }}
+                        />
+                      ))}
+                      <Typography variant="caption" sx={{ color: 'text.muted', ml: 'auto' }}>
+                        Edited {new Date(currentNote.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </Typography>
+                    </Box>
+                  </Box>
+
+                  <Divider sx={{ mb: 3 }} />
+
+                  {/* Rich Text Editor */}
+                  <TipTapEditor
+                    key={`${currentNote.id}-${currentNote.isLocked ? 'unlocked' : 'plain'}`}
+                    initialContent={currentNote.isLocked ? (unlockedVaults[currentNote.id]?.content || '') : currentNote.content}
+                    onChange={handleUpdateNoteContent}
+                    editable={!isReadOnly}
+                    onRequireAuth={() => openModal('auth')}
+                    onNavigateBacklink={(title) => {
+                      const match = notes.find((n) => n.title.toLowerCase() === title.toLowerCase());
+                      if (match) navigateTo('editor', match.id);
                     }}
                   />
-
-                  {/* Metadata Chips: Tags & Last Edited */}
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 1.5, flexWrap: 'wrap' }}>
-                    <Chip
-                      icon={<FolderOpen sx={{ fontSize: 14 }} />}
-                      label={currentFolder ? currentFolder.name : 'Workspace'}
-                      size="small"
-                      variant="outlined"
-                      sx={{ fontSize: '0.72rem', height: 22 }}
-                    />
-                    {currentNote.tags.map((tag) => (
-                      <Chip
-                        key={tag}
-                        label={`#${tag}`}
-                        size="small"
-                        sx={{ fontSize: '0.72rem', height: 22, bgcolor: 'rgba(99, 102, 241, 0.15)', color: '#818CF8' }}
-                      />
-                    ))}
-                    <Typography variant="caption" sx={{ color: 'text.muted', ml: 'auto' }}>
-                      Edited {new Date(currentNote.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                    </Typography>
-                  </Box>
                 </Box>
-
-                <Divider sx={{ mb: 3 }} />
-
-                {/* Rich Text Editor */}
-                <TipTapEditor
-                  initialContent={currentNote.content}
-                  onChange={handleUpdateNoteContent}
-                  editable={!isReadOnly}
-                  onRequireAuth={() => openModal('auth')}
-                  onNavigateBacklink={(title) => {
-                    const match = notes.find((n) => n.title.toLowerCase() === title.toLowerCase());
-                    if (match) navigateTo('editor', match.id);
-                  }}
-                />
-              </Box>
+              )
             )}
 
             {/* 3D Knowledge Graph View */}
@@ -1300,7 +1490,20 @@ export const App: React.FC = () => {
         onExportMarkdown={handleExportMarkdown}
         onExportPdf={handleExportPdf}
         onImportMarkdown={() => fileInputRef.current?.click()}
+        onLockCurrentNote={() => setLockDialogOpen(true)}
       />
+
+      {/* End-to-End Encrypted Vault Lock Dialog */}
+      {currentNote && (
+        <LockNoteDialog
+          open={lockDialogOpen}
+          note={currentNote}
+          isCurrentlyLocked={Boolean(currentNote.isLocked)}
+          onClose={() => setLockDialogOpen(false)}
+          onLockNote={handleApplyLock}
+          onRemoveLock={currentNote.isLocked ? handleRemoveLock : undefined}
+        />
+      )}
 
       {/* Conflict Resolution Dialog */}
       <ConflictDialog

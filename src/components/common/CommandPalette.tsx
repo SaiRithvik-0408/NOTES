@@ -31,6 +31,7 @@ import {
   FileDownloadOutlined,
   FileUploadOutlined,
   SportsEsportsOutlined,
+  LockOutlined,
 } from '@mui/icons-material';
 import { Note } from '../../types/note';
 
@@ -58,6 +59,7 @@ interface CommandPaletteProps {
   onExportMarkdown?: () => void;
   onExportPdf?: () => void;
   onImportMarkdown?: () => void;
+  onLockCurrentNote?: () => void;
 }
 
 function stripHtml(html: string): string {
@@ -77,6 +79,7 @@ export const CommandPalette = ({
   onExportMarkdown,
   onExportPdf,
   onImportMarkdown,
+  onLockCurrentNote,
 }: CommandPaletteProps): React.ReactElement => {
   const theme = useTheme();
   const [query, setQuery] = useState('');
@@ -127,6 +130,16 @@ export const CommandPalette = ({
               onClose();
             },
           },
+          {
+            id: 'cmd-lock-note',
+            title: currentNote.isLocked ? `Security & Password for "${currentNote.title}"` : `Encrypt & Lock "${currentNote.title}"`,
+            category: 'Actions' as const,
+            icon: <LockOutlined fontSize="small" sx={{ color: '#F59E0B' }} />,
+            action: () => {
+              onLockCurrentNote?.();
+              onClose();
+            },
+          },
         ]
       : []),
     {
@@ -171,6 +184,25 @@ export const CommandPalette = ({
     return notes
       .map((note: Note) => {
         const titleMatch = note.title.toLowerCase().includes(q);
+
+        if (note.isLocked) {
+          if (q && !titleMatch) {
+            return null;
+          }
+          return {
+            id: `note-${note.id}`,
+            title: note.title || 'Untitled Note',
+            subtitle: '🔒 Encrypted Private Vault Note',
+            category: 'Notes' as const,
+            badge: 'Encrypted',
+            icon: <LockOutlined fontSize="small" sx={{ color: '#F59E0B' }} />,
+            action: () => {
+              onSelectNote(note.id);
+              onClose();
+            },
+          };
+        }
+
         const plainContent = stripHtml(note.content || '');
         const contentIdx = q ? plainContent.toLowerCase().indexOf(q) : -1;
         const contentMatch = contentIdx !== -1;
