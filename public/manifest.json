@@ -1,16 +1,52 @@
 {
-  "short_name": "NexusNotes",
+  "id": "nexus-notes-app",
   "name": "Nexus Notes — Local-First Intelligent Workspace",
+  "short_name": "Nexus Notes",
+  "description": "Local-First Intelligent Collaborative Workspace with AI Superpowers, Voice Dictation, Games Hub & 3D Knowledge Graph.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone", "minimal-ui"],
+  "background_color": "#070A12",
+  "theme_color": "#6366F1",
+  "orientation": "any",
+  "lang": "en-US",
+  "categories": ["productivity", "utilities", "education", "lifestyle"],
   "icons": [
     {
       "src": "/logo.svg",
       "type": "image/svg+xml",
-      "sizes": "192x192 512x512"
+      "sizes": "48x48 72x72 96x96 128x128 192x192 256x256 512x512",
+      "purpose": "any"
+    },
+    {
+      "src": "/logo.svg",
+      "type": "image/svg+xml",
+      "sizes": "192x192 512x512",
+      "purpose": "maskable"
     }
   ],
-  "start_url": "/",
-  "background_color": "#090d16",
-  "theme_color": "#6366f1",
-  "display": "standalone",
-  "orientation": "any"
+  "shortcuts": [
+    {
+      "name": "New Note",
+      "short_name": "New Note",
+      "description": "Instantly create a new note",
+      "url": "/#action=new-note",
+      "icons": [{ "src": "/logo.svg", "sizes": "96x96" }]
+    },
+    {
+      "name": "Games Hub",
+      "short_name": "Games",
+      "description": "Play Sudoku, 2048, and Multiplayer Chess",
+      "url": "/#view=games",
+      "icons": [{ "src": "/logo.svg", "sizes": "96x96" }]
+    },
+    {
+      "name": "Knowledge Graph",
+      "short_name": "Graph",
+      "description": "Explore 3D interactive knowledge network",
+      "url": "/#view=graph",
+      "icons": [{ "src": "/logo.svg", "sizes": "96x96" }]
+    }
+  ]
 }

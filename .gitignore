@@ -23,3 +23,5 @@ pnpm-debug.log*
 # JavaScript build artifacts & transpiled files (entire codebase is now 100% TypeScript)
 *.js
 *.js.map
+!public/sw.js
+

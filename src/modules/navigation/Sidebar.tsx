@@ -17,6 +17,7 @@ import {
   useTheme,
   Avatar,
   Badge,
+  Paper,
   Dialog,
   DialogTitle,
   DialogContent,
@@ -49,11 +50,14 @@ import {
   MoreVert,
   LockOutlined,
   SportsEsportsOutlined,
+  InstallMobile,
 } from '@mui/icons-material';
 import { Note, Folder, Workspace, Tag } from '../../types/note';
 import { SyncStatus } from '../../types/sync';
 import { SyncStatusIndicator } from '../../components/common/SyncStatusIndicator';
 import { useAuth } from '../auth/AuthContext';
+import { usePwaInstall } from '../../utils/pwaInstall';
+
 
 interface SidebarProps {
   currentWorkspace: Workspace;
@@ -112,6 +116,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const [openFolders, setOpenFolders] = useState<Record<string, boolean>>({
     'folder-sample': true,
   });
+
+  // PWA Install Hook & Dialog
+  const { isInstallable, isInstalled, promptInstall } = usePwaInstall();
+  const [installDialogOpen, setInstallDialogOpen] = useState(false);
+
+  const handleInstallClick = async () => {
+    if (isInstallable) {
+      const accepted = await promptInstall();
+      if (!accepted) setInstallDialogOpen(true);
+    } else {
+      setInstallDialogOpen(true);
+    }
+  };
 
   // Folder Dialog & Menu States
   const [newFolderDialogOpen, setNewFolderDialogOpen] = useState(false);
@@ -317,6 +334,46 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <ListItemText primary={<Typography variant="body2" sx={{ fontWeight: 600 }}>Games & Chess</Typography>} />
           <Chip label="3D" size="small" sx={{ height: 18, fontSize: '0.65rem', bgcolor: 'rgba(16, 185, 129, 0.2)', color: '#34D399', fontWeight: 700 }} />
         </ListItemButton>
+
+        {/* PWA Install Button */}
+        {!isInstalled && (
+          <ListItemButton
+            onClick={handleInstallClick}
+            sx={{
+              py: 0.6,
+              px: 1.2,
+              borderRadius: '8px',
+              mb: 0.3,
+              background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.12) 0%, rgba(168, 85, 247, 0.12) 100%)',
+              border: '1px solid rgba(99, 102, 241, 0.25)',
+              '&:hover': {
+                background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.22) 0%, rgba(168, 85, 247, 0.22) 100%)',
+              },
+            }}
+          >
+            <ListItemIcon sx={{ minWidth: 30, color: '#818CF8' }}>
+              <InstallMobile fontSize="small" />
+            </ListItemIcon>
+            <ListItemText
+              primary={
+                <Typography variant="body2" sx={{ fontWeight: 700, fontSize: '0.82rem' }}>
+                  Install App
+                </Typography>
+              }
+            />
+            <Chip
+              label="PWA"
+              size="small"
+              sx={{
+                height: 18,
+                fontSize: '0.62rem',
+                fontWeight: 700,
+                bgcolor: 'rgba(99, 102, 241, 0.2)',
+                color: '#818CF8',
+              }}
+            />
+          </ListItemButton>
+        )}
       </List>
 
       <Divider sx={{ my: 1, mx: 2 }} />
@@ -713,6 +770,68 @@ export const Sidebar: React.FC<SidebarProps> = ({
             sx={{ textTransform: 'none', borderRadius: '8px' }}
           >
             Save
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Dialog: PWA Installation Guide */}
+      <Dialog
+        open={installDialogOpen}
+        onClose={() => setInstallDialogOpen(false)}
+        maxWidth="xs"
+        fullWidth
+        PaperProps={{
+          sx: {
+            borderRadius: '16px',
+            p: 1,
+            backgroundColor: theme.palette.mode === 'dark' ? '#0f172a' : '#ffffff',
+            border: `1px solid ${theme.palette.divider}`,
+          },
+        }}
+      >
+        <DialogTitle sx={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: 1 }}>
+          <InstallMobile color="primary" /> Install Nexus Notes App
+        </DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" sx={{ color: 'text.secondary', mb: 2 }}>
+            Enjoy Nexus Notes as a <strong>native, fast, offline-capable application</strong> on your desktop or mobile device.
+          </Typography>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+            <Paper variant="outlined" sx={{ p: 1.5, borderRadius: '10px' }}>
+              <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 0.5 }}>
+                📱 Mobile (iOS / Safari)
+              </Typography>
+              <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                Tap the <strong>Share</strong> button at the bottom of Safari, scroll down, and select <strong>&quot;Add to Home Screen&quot;</strong>.
+              </Typography>
+            </Paper>
+
+            <Paper variant="outlined" sx={{ p: 1.5, borderRadius: '10px' }}>
+              <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 0.5 }}>
+                💻 Desktop (Chrome, Edge & Brave)
+              </Typography>
+              <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                Click the <strong>Install icon (⊕)</strong> on the right side of the address bar, or click browser menu (⋮) &gt; <strong>&quot;Install Nexus Notes&quot;</strong>.
+              </Typography>
+            </Paper>
+
+            <Paper variant="outlined" sx={{ p: 1.5, borderRadius: '10px' }}>
+              <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 0.5 }}>
+                🤖 Mobile (Android / Chrome)
+              </Typography>
+              <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                Tap the top menu (⋮) and select <strong>&quot;Install app&quot;</strong> or <strong>&quot;Add to Home screen&quot;</strong>.
+              </Typography>
+            </Paper>
+          </Box>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button
+            variant="contained"
+            onClick={() => setInstallDialogOpen(false)}
+            sx={{ textTransform: 'none', borderRadius: '8px', fontWeight: 700 }}
+          >
+            Got It
           </Button>
         </DialogActions>
       </Dialog>

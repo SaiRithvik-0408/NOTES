@@ -43,10 +43,13 @@ import {
   FileDownloadOutlined,
   FileUploadOutlined,
   PictureAsPdfOutlined,
+  CloudOff,
 } from '@mui/icons-material';
 import confetti from 'canvas-confetti';
 import { v4 as uuidv4 } from 'uuid';
 import { exportNoteToMarkdown, exportNoteToPdf, parseMarkdownFile } from './utils/exportImport';
+import { usePwaInstall } from './utils/pwaInstall';
+
 
 import { createAppTheme } from './theme/theme';
 import { db, seedInitialLocalData } from './modules/storage/db';
@@ -227,6 +230,10 @@ export const App: React.FC = () => {
   const [syncStatus, setSyncStatus] = useState<SyncStatus>(mutationQueue.getStatus());
   const [isSimulatedOffline, setIsSimulatedOffline] = useState(false);
   const [activeConflict, setActiveConflict] = useState<ConflictRecord | null>(null);
+
+  // Native PWA Install & Online Status
+  const { isOnline } = usePwaInstall();
+
 
   // Note-scoped subdata
   const [comments, setComments] = useState<NoteComment[]>([]);
@@ -1023,6 +1030,25 @@ export const App: React.FC = () => {
               )}
             </Box>
           </Box>
+
+          {/* Real Network Offline Indicator */}
+          {!isOnline && (
+            <Alert
+              severity="info"
+              icon={<CloudOff fontSize="inherit" />}
+              sx={{
+                py: 0.3,
+                px: 2,
+                borderRadius: 0,
+                fontSize: '0.78rem',
+                borderBottom: `1px solid ${theme.palette.divider}`,
+                bgcolor: 'rgba(245, 158, 11, 0.12)',
+                color: '#fbbf24',
+              }}
+            >
+              ⚡ You are currently offline. Full access is active — all your notes, games, and graph edits are safely saved locally to your device and will sync when reconnected.
+            </Alert>
+          )}
 
           {/* Read-Only Mode Banner if active */}
           {isReadOnly && (
