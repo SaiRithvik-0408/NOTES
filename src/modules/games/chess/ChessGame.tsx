@@ -31,6 +31,10 @@ import {
   SwapVert,
   LightbulbOutlined,
   TipsAndUpdates,
+  PublicOutlined,
+  ContentCopy,
+  Check,
+  LinkOutlined,
 } from '@mui/icons-material';
 import {
   AiDifficulty,
@@ -52,6 +56,7 @@ import {
 } from './chessEngine';
 import { getBestMove } from './chessAi';
 import { chessAudio } from './chessAudio';
+import { chessMultiplayer } from './chessMultiplayer';
 import { Chess2DView } from './Chess2DView';
 import { Chess3DView } from './Chess3DView';
 
@@ -128,10 +133,79 @@ export const ChessGame: React.FC = () => {
     [soundEnabled]
   );
 
+  // Online Multiplayer State
+  const [onlineRoomId, setOnlineRoomId] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      const hash = window.location.hash;
+      const match = hash.match(/chess-room=([a-zA-Z0-9_-]+)/);
+      if (match) return match[1];
+    }
+    return `room_${Math.random().toString(36).substring(2, 8)}`;
+  });
+
+  const [myOnlineColor, setMyOnlineColor] = useState<PieceColor>(() => {
+    if (typeof window !== 'undefined') {
+      const hash = window.location.hash;
+      if (hash.includes('color=b')) return 'b';
+    }
+    return 'w';
+  });
+
+  const [peerConnected, setPeerConnected] = useState<boolean>(false);
+  const [copiedLink, setCopiedLink] = useState<boolean>(false);
+
+  // Auto-detect multiplayer link on mount
+  useEffect(() => {
+    if (typeof window !== 'undefined' && window.location.hash.includes('chess-room')) {
+      setGameMode('online');
+      if (window.location.hash.includes('color=b')) {
+        setMyOnlineColor('b');
+        setIsFlipped(true);
+      }
+    }
+  }, []);
+
+  // Sync multiplayer socket & BroadcastChannel
+  useEffect(() => {
+    if (gameMode !== 'online') {
+      chessMultiplayer.disconnect();
+      return;
+    }
+
+    chessMultiplayer.init(onlineRoomId, myOnlineColor);
+
+    const unsubscribe = chessMultiplayer.subscribe((msg) => {
+      if (msg.type === 'chess_move') {
+        setHistoryStack((prev) => [...prev, gameState]);
+        const nextState = applyMove(gameState, msg.move);
+        setGameState(nextState);
+        triggerMoveSound(msg.move, nextState.isCheck, nextState.isCheckmate);
+      } else if (msg.type === 'chess_join') {
+        setPeerConnected(true);
+        chessMultiplayer.send({
+          type: 'chess_peer_joined',
+          roomId: onlineRoomId,
+          color: myOnlineColor,
+          playerId: chessMultiplayer.getPlayerId(),
+        });
+      } else if (msg.type === 'chess_peer_joined') {
+        setPeerConnected(true);
+      } else if (msg.type === 'chess_reset') {
+        setGameState(createInitialGameState());
+        setHistoryStack([]);
+      }
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, [gameMode, onlineRoomId, myOnlineColor, gameState, triggerMoveSound]);
+
   // Handle Square Selection and Piece Movement
   const handleSelectSquare = useCallback(
     (pos: Position) => {
       if (isAiThinking || gameState.isCheckmate || gameState.isStalemate) return;
+      if (gameMode === 'online' && gameState.turn !== myOnlineColor) return;
 
       const [r, c] = pos;
       const clickedPiece = gameState.board[r][c];
@@ -166,6 +240,10 @@ export const ChessGame: React.FC = () => {
           setActiveHint(null);
           setHintExplanation(null);
           triggerMoveSound(legalMove, nextState.isCheck, nextState.isCheckmate);
+
+          if (gameMode === 'online') {
+            chessMultiplayer.sendMove(legalMove, nextState.turn);
+          }
           return;
         }
       }
@@ -194,7 +272,7 @@ export const ChessGame: React.FC = () => {
         setHintExplanation(null);
       }
     },
-    [gameState, isAiThinking, triggerMoveSound]
+    [gameState, isAiThinking, gameMode, myOnlineColor, triggerMoveSound]
   );
 
   // Generate tactical AI hint
@@ -218,16 +296,8 @@ export const ChessGame: React.FC = () => {
           ? 'Knight'
           : 'Pawn';
       explanation = `Capture opponent's ${pName} on ${best.san?.slice(-2) || 'target'}.`;
-    } else if (best.piece.type === 'n') {
-      explanation = 'Deploy knight towards the center for strategic board control.';
-    } else if (best.piece.type === 'b') {
-      explanation = 'Activate bishop along an open diagonal.';
-    } else if (best.piece.type === 'r') {
-      explanation = 'Control key open file with rook.';
-    } else if (best.piece.type === 'q') {
-      explanation = 'Reposition queen for attacking pressure.';
-    } else if (best.piece.type === 'p') {
-      explanation = 'Push pawn to claim spatial center advantage.';
+    } else if (best.san?.includes('+')) {
+      explanation = 'Deliver check to force opponent response.';
     }
 
     setActiveHint(best);
@@ -263,6 +333,10 @@ export const ChessGame: React.FC = () => {
     setGameState(nextState);
     triggerMoveSound(move, nextState.isCheck, nextState.isCheckmate);
     setPendingPromotion(null);
+
+    if (gameMode === 'online') {
+      chessMultiplayer.sendMove(move, nextState.turn);
+    }
   };
 
   // AI Turn Execution
@@ -318,6 +392,33 @@ export const ChessGame: React.FC = () => {
     setPendingPromotion(null);
     setActiveHint(null);
     setHintExplanation(null);
+    if (gameMode === 'online') {
+      chessMultiplayer.sendReset();
+    }
+  };
+
+  const handleCopyInviteLink = () => {
+    if (typeof window === 'undefined') return;
+    const opponentColor = myOnlineColor === 'w' ? 'b' : 'w';
+    const origin = window.location.origin;
+    const pathname = window.location.pathname;
+    const url = `${origin}${pathname}#chess-room=${onlineRoomId}&color=${opponentColor}`;
+    navigator.clipboard.writeText(url);
+    setCopiedLink(true);
+    setTimeout(() => setCopiedLink(false), 2500);
+  };
+
+  const handleCreateNewRoom = () => {
+    const newRoom = `room_${Math.random().toString(36).substring(2, 8)}`;
+    setOnlineRoomId(newRoom);
+    setMyOnlineColor('w');
+    setIsFlipped(false);
+    setPeerConnected(false);
+    setGameState(createInitialGameState());
+    setHistoryStack([]);
+    if (typeof window !== 'undefined') {
+      window.location.hash = `#chess-room=${newRoom}&color=w`;
+    }
   };
 
   return (
@@ -561,21 +662,98 @@ export const ChessGame: React.FC = () => {
               Game Options
             </Typography>
 
-            {/* Mode Select (vs Bot / Local 2P) */}
+            {/* Mode Select (vs Bot / Local 2P / Online) */}
             <ToggleButtonGroup
               value={gameMode}
               exclusive
-              onChange={(_, v) => v && setGameMode(v)}
+              onChange={(_, v) => {
+                if (!v) return;
+                setGameMode(v);
+                if (v === 'online' && typeof window !== 'undefined' && !window.location.hash.includes('chess-room')) {
+                  window.location.hash = `#chess-room=${onlineRoomId}&color=w`;
+                }
+              }}
               fullWidth
               size="small"
             >
-              <ToggleButton value="ai" sx={{ textTransform: 'none', fontWeight: 700, gap: 0.8 }}>
-                <SmartToyOutlined fontSize="small" /> vs AI Bot
+              <ToggleButton value="ai" sx={{ textTransform: 'none', fontWeight: 700, gap: 0.6, fontSize: '0.78rem' }}>
+                <SmartToyOutlined fontSize="small" /> vs AI
               </ToggleButton>
-              <ToggleButton value="local" sx={{ textTransform: 'none', fontWeight: 700, gap: 0.8 }}>
+              <ToggleButton value="local" sx={{ textTransform: 'none', fontWeight: 700, gap: 0.6, fontSize: '0.78rem' }}>
                 <PersonOutline fontSize="small" /> Pass & Play
               </ToggleButton>
+              <ToggleButton value="online" sx={{ textTransform: 'none', fontWeight: 700, gap: 0.6, fontSize: '0.78rem' }}>
+                <PublicOutlined fontSize="small" /> 🌐 Online
+              </ToggleButton>
             </ToggleButtonGroup>
+
+            {/* Online Multiplayer Lobby / Room Info */}
+            {gameMode === 'online' && (
+              <Box
+                sx={{
+                  p: 1.8,
+                  borderRadius: '12px',
+                  bgcolor: isDark ? 'rgba(99, 102, 241, 0.12)' : 'rgba(99, 102, 241, 0.08)',
+                  border: '1px solid rgba(99, 102, 241, 0.3)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 1.2,
+                }}
+              >
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <Typography variant="subtitle2" sx={{ fontWeight: 800, fontSize: '0.85rem' }}>
+                    Multiplayer Room
+                  </Typography>
+                  <Chip
+                    label={peerConnected ? '🟢 Opponent Connected' : '⏳ Waiting for Opponent'}
+                    size="small"
+                    color={peerConnected ? 'success' : 'warning'}
+                    sx={{ fontWeight: 700, fontSize: '0.68rem', height: 22 }}
+                  />
+                </Box>
+
+                <Typography variant="caption" sx={{ color: 'text.secondary', lineHeight: 1.4 }}>
+                  You are playing as <strong>{myOnlineColor === 'w' ? 'White (First Move)' : 'Black'}</strong>.
+                  {gameState.turn !== myOnlineColor
+                    ? ' Waiting for opponent to make a move...'
+                    : ' Your turn to move!'}
+                </Typography>
+
+                <Stack direction="row" spacing={1}>
+                  <Button
+                    variant="contained"
+                    size="small"
+                    fullWidth
+                    startIcon={copiedLink ? <Check /> : <ContentCopy />}
+                    onClick={handleCopyInviteLink}
+                    sx={{
+                      textTransform: 'none',
+                      fontWeight: 700,
+                      fontSize: '0.78rem',
+                      borderRadius: '8px',
+                      background: copiedLink ? '#10B981' : 'linear-gradient(135deg, #6366F1, #8B5CF6)',
+                    }}
+                  >
+                    {copiedLink ? 'Link Copied!' : 'Copy Game Link'}
+                  </Button>
+
+                  <Button
+                    variant="outlined"
+                    size="small"
+                    onClick={handleCreateNewRoom}
+                    sx={{
+                      textTransform: 'none',
+                      fontWeight: 700,
+                      fontSize: '0.78rem',
+                      borderRadius: '8px',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    New Room
+                  </Button>
+                </Stack>
+              </Box>
+            )}
 
             {/* AI Difficulty Selector */}
             {gameMode === 'ai' && (

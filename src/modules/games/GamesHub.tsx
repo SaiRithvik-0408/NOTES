@@ -3,11 +3,20 @@ import { Box, Typography, Paper, Chip, Button, Grid, useTheme } from '@mui/mater
 import { SportsEsports, ViewInAr, Star, ExtensionOutlined, Grid4x4, RocketLaunch } from '@mui/icons-material';
 import { ChessGame } from './chess/ChessGame';
 import { Game2048View } from './puzzle2048/Game2048View';
+import { SudokuView } from './sudoku/SudokuView';
 
 export const GamesHub: React.FC = () => {
   const theme = useTheme();
   const isDark = theme.palette.mode === 'dark';
-  const [selectedGame, setSelectedGame] = useState<'chess' | '2048' | 'sudoku'>('chess');
+  const [selectedGame, setSelectedGame] = useState<'chess' | '2048' | 'sudoku'>(() => {
+    if (typeof window !== 'undefined') {
+      const hash = window.location.hash.toLowerCase();
+      if (hash.includes('chess') || hash.includes('room')) return 'chess';
+      if (hash.includes('2048')) return '2048';
+      if (hash.includes('sudoku')) return 'sudoku';
+    }
+    return 'chess';
+  });
 
   return (
     <Box sx={{ width: '100%', minHeight: 'calc(100vh - 120px)', pb: 6 }}>
@@ -113,38 +122,7 @@ export const GamesHub: React.FC = () => {
       ) : selectedGame === '2048' ? (
         <Game2048View />
       ) : (
-        <Paper
-          elevation={0}
-          sx={{
-            p: 6,
-            textAlign: 'center',
-            borderRadius: '20px',
-            bgcolor: isDark ? 'rgba(30, 41, 59, 0.4)' : '#FFFFFF',
-            border: `1px solid ${isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.08)'}`,
-            maxWidth: 600,
-            mx: 'auto',
-          }}
-        >
-          <ExtensionOutlined sx={{ fontSize: 48, color: 'primary.main', mb: 2 }} />
-          <Typography variant="h5" sx={{ fontWeight: 800, mb: 1 }}>
-            Sudoku Master
-          </Typography>
-          <Typography variant="body2" sx={{ color: 'text.secondary', mb: 3 }}>
-            Sudoku Master is currently queued in Task 3 of development! In the meantime, enjoy 3D Chess and the newly launched 2048 Puzzle.
-          </Typography>
-          <Button
-            variant="contained"
-            onClick={() => setSelectedGame('chess')}
-            sx={{
-              borderRadius: '10px',
-              textTransform: 'none',
-              fontWeight: 700,
-              background: 'linear-gradient(135deg, #6366F1, #8B5CF6)',
-            }}
-          >
-            Play 3D Chess Now
-          </Button>
-        </Paper>
+        <SudokuView />
       )}
     </Box>
   );
