@@ -1,6 +1,7 @@
-import { users, otpStore, decryptVerificationToken, saveUser, getUserByEmailOrUsername } from '../../_db.js';
+import type { ApiRequest, ApiResponse } from '../../_types';
+import { users, otpStore, decryptVerificationToken, saveUser, getUserByEmailOrUsername, UserRecord } from '../../_db';
 
-export default async function handler(req, res) {
+export default async function handler(req: ApiRequest, res: ApiResponse) {
   res.setHeader('Content-Type', 'application/json');
 
   if (req.method !== 'POST') {
@@ -16,7 +17,7 @@ export default async function handler(req, res) {
   const inputCode = String(code).trim();
 
   let verified = false;
-  let userData = null;
+  let userData: any = null;
 
   // 1. Try stateless cryptographic verification token first (works seamlessly on Vercel across different serverless instances)
   if (verificationToken) {
@@ -58,7 +59,7 @@ export default async function handler(req, res) {
   }
 
   // Create or activate user with password persistence
-  let userRecord = null;
+  let userRecord: UserRecord | null = null;
   if (userData) {
     const newUserId = `user-${Date.now()}`;
     const colors = ['#6366F1', '#EC4899', '#10B981', '#3B82F6', '#8B5CF6', '#F59E0B'];

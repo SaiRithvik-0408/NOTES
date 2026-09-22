@@ -1,6 +1,7 @@
-import { getUserByEmailOrUsername } from '../../_db.js';
+import type { ApiRequest, ApiResponse } from '../../_types';
+import { getUserByEmailOrUsername } from '../../_db';
 
-export default async function handler(req, res) {
+export default async function handler(req: ApiRequest, res: ApiResponse) {
   res.setHeader('Content-Type', 'application/json');
 
   if (req.method !== 'POST') {

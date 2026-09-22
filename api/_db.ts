@@ -5,12 +5,30 @@ import pg from 'pg';
 
 const { Pool } = pg;
 
-// 1. In-memory caches
-export const users = new Map();
-export const otpStore = new Map();
-export const workspaces = new Map();
-export const notes = new Map();
-export const operations = new Map();
+export interface UserRecord {
+  id: string;
+  username: string;
+  email: string;
+  name: string;
+  password?: string;
+  color?: string;
+  isVerified?: boolean;
+  createdAt?: string;
+  avatarUrl?: string;
+}
+
+export interface OtpChallenge {
+  code: string;
+  expiresAt: number;
+  userData?: any;
+}
+
+// 1. In-memory caches for fast local lambda execution
+export const users = new Map<string, UserRecord>();
+export const otpStore = new Map<string, OtpChallenge>();
+export const workspaces = new Map<string, any>();
+export const notes = new Map<string, any>();
+export const operations = new Map<string, any>();
 
 const AUTH_SECRET = process.env.JWT_SECRET || 'nexus-secret-key-2026-auth-gate';
 const DB_URL = process.env.DATABASE_URL || process.env.POSTGRES_URL || process.env.POSTGRES_PRISMA_URL || null;
@@ -26,12 +44,12 @@ try {
     const raw = fs.readFileSync(PERSISTENT_FILE_PATH, 'utf8');
     const parsed = JSON.parse(raw);
     if (Array.isArray(parsed)) {
-      parsed.forEach((u) => {
+      parsed.forEach((u: UserRecord) => {
         if (u && u.id) users.set(u.id, u);
       });
     }
   }
-} catch (e) {
+} catch (e: any) {
   console.warn('Could not read persistent users store file:', e.message);
 }
 
@@ -39,13 +57,13 @@ function persistUsersToDisk() {
   try {
     const list = Array.from(users.values());
     fs.writeFileSync(PERSISTENT_FILE_PATH, JSON.stringify(list, null, 2), 'utf8');
-  } catch (e) {
+  } catch (e: any) {
     console.warn('Could not persist users to disk:', e.message);
   }
 }
 
 // 2. PostgreSQL Connection Pool (if DATABASE_URL is configured)
-let pool = null;
+let pool: pg.Pool | null = null;
 let dbInitialized = false;
 
 if (DB_URL) {
@@ -78,7 +96,7 @@ async function ensurePostgresTable() {
       );
     `);
     dbInitialized = true;
-  } catch (err) {
+  } catch (err: any) {
     console.error('Error ensuring PostgreSQL nexus_users table:', err.message);
   }
 }
@@ -86,7 +104,7 @@ async function ensurePostgresTable() {
 /**
  * Saves a user record to PostgreSQL (if connected) and local persistent cache
  */
-export async function saveUser(userRecord) {
+export async function saveUser(userRecord: UserRecord): Promise<UserRecord> {
   // Always update memory & disk
   users.set(userRecord.id, userRecord);
   persistUsersToDisk();
@@ -110,13 +128,13 @@ export async function saveUser(userRecord) {
           userRecord.username.toLowerCase(),
           userRecord.email.toLowerCase(),
           userRecord.name,
-          userRecord.password,
+          userRecord.password || '',
           userRecord.color || '#6366F1',
           userRecord.isVerified ?? true,
           userRecord.createdAt || new Date().toISOString(),
         ]
       );
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error saving user to PostgreSQL:', err.message);
     }
   }
@@ -127,7 +145,7 @@ export async function saveUser(userRecord) {
 /**
  * Retrieves a user by email or username from PostgreSQL or local cache
  */
-export async function getUserByEmailOrUsername(identifier) {
+export async function getUserByEmailOrUsername(identifier: string): Promise<UserRecord | null> {
   if (!identifier) return null;
   const key = identifier.trim().toLowerCase();
 
@@ -144,7 +162,7 @@ export async function getUserByEmailOrUsername(identifier) {
       );
       if (res.rows.length > 0) {
         const row = res.rows[0];
-        const record = {
+        const record: UserRecord = {
           id: row.id,
           username: row.username,
           email: row.email,
@@ -159,7 +177,7 @@ export async function getUserByEmailOrUsername(identifier) {
         persistUsersToDisk();
         return record;
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('PostgreSQL lookup error:', err.message);
     }
   }
@@ -177,7 +195,7 @@ export async function getUserByEmailOrUsername(identifier) {
 /**
  * Checks if username or email is already taken
  */
-export async function isUsernameOrEmailTaken(username, email) {
+export async function isUsernameOrEmailTaken(username: string, email: string): Promise<{ usernameTaken: boolean; emailTaken: boolean }> {
   const normUser = (username || '').trim().toLowerCase();
   const normEmail = (email || '').trim().toLowerCase();
 
@@ -195,7 +213,7 @@ export async function isUsernameOrEmailTaken(username, email) {
           emailTaken: row.email.toLowerCase() === normEmail,
         };
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('PostgreSQL check taken error:', err.message);
     }
   }
@@ -207,7 +225,7 @@ export async function isUsernameOrEmailTaken(username, email) {
 }
 
 // Stateless encrypted verification token generator for Serverless Lambdas
-export function generateVerificationToken(email, code, userData = null) {
+export function generateVerificationToken(email: string, code: string, userData: any = null): string {
   const expiresAt = Date.now() + 10 * 60 * 1000; // 10 minutes
   const payload = JSON.stringify({ email: email.toLowerCase(), code: String(code).trim(), userData, expiresAt });
   const iv = crypto.randomBytes(16);
@@ -218,7 +236,7 @@ export function generateVerificationToken(email, code, userData = null) {
 }
 
 // Stateless token decryptor
-export function decryptVerificationToken(token) {
+export function decryptVerificationToken(token: string): { email: string; code: string; userData: any; expiresAt: number } | null {
   if (!token || typeof token !== 'string') return null;
   try {
     const parts = token.split(':');

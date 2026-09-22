@@ -18,3 +18,8 @@ pnpm-debug.log*
 *.sw?
 
 .vercel
+.nexus_users_store.json
+
+# JavaScript build artifacts & transpiled files (entire codebase is now 100% TypeScript)
+*.js
+*.js.map

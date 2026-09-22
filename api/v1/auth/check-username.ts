@@ -1,8 +1,9 @@
-import { getUserByEmailOrUsername } from '../../_db.js';
+import type { ApiRequest, ApiResponse } from '../../_types';
+import { getUserByEmailOrUsername } from '../../_db';
 
-export default async function handler(req, res) {
+export default async function handler(req: ApiRequest, res: ApiResponse) {
   res.setHeader('Content-Type', 'application/json');
-  const username = (req.query.username || '').trim().toLowerCase();
+  const username = ((req.query?.username as string) || '').trim().toLowerCase();
 
   if (!username) {
     return res.status(400).json({ available: false, message: 'Username is required' });

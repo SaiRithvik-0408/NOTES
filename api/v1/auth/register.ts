@@ -1,7 +1,8 @@
-import { generateVerificationToken, isUsernameOrEmailTaken, otpStore } from '../../_db.js';
-import { sendOtpEmail } from '../../_mailer.js';
+import type { ApiRequest, ApiResponse } from '../../_types';
+import { generateVerificationToken, isUsernameOrEmailTaken, otpStore } from '../../_db';
+import { sendOtpEmail } from '../../_mailer';
 
-export default async function handler(req, res) {
+export default async function handler(req: ApiRequest, res: ApiResponse) {
   res.setHeader('Content-Type', 'application/json');
 
   if (req.method !== 'POST') {

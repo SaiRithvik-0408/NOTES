@@ -1,7 +1,8 @@
-import { otpStore, generateVerificationToken, decryptVerificationToken } from '../../_db.js';
-import { sendOtpEmail } from '../../_mailer.js';
+import type { ApiRequest, ApiResponse } from '../../_types';
+import { otpStore, generateVerificationToken, decryptVerificationToken } from '../../_db';
+import { sendOtpEmail } from '../../_mailer';
 
-export default async function handler(req, res) {
+export default async function handler(req: ApiRequest, res: ApiResponse) {
   res.setHeader('Content-Type', 'application/json');
 
   if (req.method !== 'POST') {
@@ -17,7 +18,7 @@ export default async function handler(req, res) {
   const code = Math.floor(100000 + Math.random() * 900000).toString();
 
   // Try to preserve userData from previous token or memory
-  let userData = null;
+  let userData: any = null;
   if (prevToken) {
     const decrypted = decryptVerificationToken(prevToken);
     if (decrypted?.userData) {

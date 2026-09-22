@@ -1,6 +1,7 @@
-import { operations, notes } from '../_db.js';
+import type { ApiRequest, ApiResponse } from '../_types';
+import { operations, notes } from '../_db';
 
-export default function handler(req, res) {
+export default function handler(req: ApiRequest, res: ApiResponse) {
   res.setHeader('Content-Type', 'application/json');
 
   if (req.method === 'POST') {
@@ -30,7 +31,7 @@ export default function handler(req, res) {
   }
 
   if (req.method === 'GET') {
-    const since = req.query.since;
+    const since = req.query?.since as string | undefined;
     const ops = Array.from(operations.values());
     const changes = ops
       .filter((op) => !since || op.appliedAt > since)

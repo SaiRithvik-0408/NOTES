@@ -1,6 +1,13 @@
 import nodemailer from 'nodemailer';
 
-export async function sendOtpEmail(email, code, name = 'there') {
+export interface SendMailResult {
+  sent: boolean;
+  messageId?: string;
+  reason?: string;
+  error?: string;
+}
+
+export async function sendOtpEmail(email: string, code: string, name: string = 'there'): Promise<SendMailResult> {
   const user = process.env.SMTP_USER || process.env.GMAIL_USER;
   const pass = process.env.SMTP_PASS || process.env.GMAIL_APP_PASSWORD;
   const host = process.env.SMTP_HOST || 'smtp.gmail.com';
@@ -74,7 +81,7 @@ export async function sendOtpEmail(email, code, name = 'there') {
 
     console.log(`✉️ [Nexus Notes] Email sent to ${email}: ${info.messageId}`);
     return { sent: true, messageId: info.messageId };
-  } catch (err) {
+  } catch (err: any) {
     console.error(`❌ [Nexus Notes] Failed to send email to ${email}:`, err);
     return { sent: false, error: err.message };
   }

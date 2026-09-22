@@ -1,4 +1,6 @@
-export default function handler(req, res) {
+import type { ApiRequest, ApiResponse } from './_types';
+
+export default function handler(req: ApiRequest, res: ApiResponse) {
   res.setHeader('Content-Type', 'application/json');
   res.status(200).json({
     status: 'ok',
