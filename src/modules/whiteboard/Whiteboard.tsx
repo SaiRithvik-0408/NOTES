@@ -213,6 +213,54 @@ export const Whiteboard: React.FC<{ noteId?: string }> = ({ noteId }) => {
     setShapes([]);
   };
 
+  const getTouchCoords = (e: React.TouchEvent<HTMLCanvasElement>): Point => {
+    const canvas = canvasRef.current;
+    if (!canvas) return { x: 0, y: 0 };
+    const rect = canvas.getBoundingClientRect();
+    const touch = e.touches[0] || e.changedTouches[0];
+    return {
+      x: touch.clientX - rect.left,
+      y: touch.clientY - rect.top,
+    };
+  };
+
+  const handleTouchStart = (e: React.TouchEvent<HTMLCanvasElement>) => {
+    e.preventDefault();
+    const point = getTouchCoords(e);
+    setIsDrawing(true);
+    setCurrentPoints([point]);
+  };
+
+  const handleTouchMove = (e: React.TouchEvent<HTMLCanvasElement>) => {
+    e.preventDefault();
+    if (!isDrawing) return;
+    const point = getTouchCoords(e);
+    if (tool === 'brush') {
+      setCurrentPoints((prev) => [...prev, point]);
+    } else {
+      setCurrentPoints((prev) => [prev[0], point]);
+    }
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent<HTMLCanvasElement>) => {
+    e.preventDefault();
+    if (!isDrawing) return;
+    setIsDrawing(false);
+    if (currentPoints.length > 1) {
+      setShapes((prev) => [
+        ...prev,
+        {
+          id: `shape-${Date.now()}`,
+          type: tool,
+          points: currentPoints,
+          color,
+          lineWidth,
+        },
+      ]);
+    }
+    setCurrentPoints([]);
+  };
+
   return (
     <Box sx={{ position: 'relative', width: '100%', height: '550px', borderRadius: '12px', overflow: 'hidden', border: `1px solid ${theme.palette.divider}`, bgcolor: theme.palette.mode === 'dark' ? '#090D16' : '#FFFFFF' }}>
       {/* Floating Canvas Toolbar */}
@@ -316,7 +364,11 @@ export const Whiteboard: React.FC<{ noteId?: string }> = ({ noteId }) => {
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseUp}
-        style={{ width: '100%', height: '100%', cursor: 'crosshair', display: 'block' }}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+        onTouchCancel={handleTouchEnd}
+        style={{ width: '100%', height: '100%', cursor: 'crosshair', display: 'block', touchAction: 'none' }}
       />
     </Box>
   );
