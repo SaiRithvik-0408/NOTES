@@ -39,6 +39,9 @@ const PORT = process.env.PORT || 3001;
 app.use(cors());
 app.use(express.json({ limit: '25mb' }));
 
+const workspaceMembersStore = new Map<string, any[]>();
+workspaceMembersStore.set('ws-default-nexus', []);
+
 // Health check endpoint
 app.get('/api/v1/health', (req, res) => {
   res.json({
@@ -129,7 +132,7 @@ app.get('/api/v1/sync', (req, res) => {
 // ==========================================
 
 // Check username availability
-app.get('/api/v1/auth/check-username', (req, res) => {
+app.get('/api/v1/auth/check-username', async (req, res) => {
   const username = (req.query.username as string || '').trim().toLowerCase();
   if (!username) {
     return res.status(400).json({ available: false, message: 'Username is required' });
@@ -142,9 +145,7 @@ app.get('/api/v1/auth/check-username', (req, res) => {
     });
   }
 
-  const existing = Array.from(serverDb.users.values()).find(
-    (u) => u.username?.toLowerCase() === username
-  );
+  const existing = await serverDb.getUserByEmailOrUsername(username);
 
   if (existing) {
     return res.json({ available: false, message: 'Username is already taken' });
@@ -183,7 +184,7 @@ app.post('/api/v1/auth/send-otp', (req, res) => {
 });
 
 // Initiate Registration with OTP
-app.post('/api/v1/auth/register', (req, res) => {
+app.post('/api/v1/auth/register', async (req, res) => {
   const { name, username, email, password, confirmPassword } = req.body;
 
   if (!name || !username || !email || !password) {
@@ -208,18 +209,12 @@ app.post('/api/v1/auth/register', (req, res) => {
 
   const normalizedEmail = email.trim().toLowerCase();
 
-  // Check username taken
-  const usernameTaken = Array.from(serverDb.users.values()).some(
-    (u) => u.username?.toLowerCase() === normalizedUsername
-  );
+  const { usernameTaken, emailTaken } = await serverDb.isUsernameOrEmailTaken(normalizedUsername, normalizedEmail);
+
   if (usernameTaken) {
     return res.status(400).json({ success: false, message: 'Username is already taken' });
   }
 
-  // Check email registered
-  const emailTaken = Array.from(serverDb.users.values()).some(
-    (u) => u.email?.toLowerCase() === normalizedEmail
-  );
   if (emailTaken) {
     return res.status(400).json({ success: false, message: 'An account with this email already exists' });
   }
@@ -253,7 +248,7 @@ app.post('/api/v1/auth/register', (req, res) => {
 });
 
 // Verify OTP & finalize registration / login
-app.post('/api/v1/auth/verify-otp', (req, res) => {
+app.post('/api/v1/auth/verify-otp', async (req, res) => {
   const { email, code, verificationToken } = req.body;
   if (!email || !code) {
     return res.status(400).json({ success: false, message: 'Email and verification code are required' });
@@ -305,7 +300,7 @@ app.post('/api/v1/auth/verify-otp', (req, res) => {
       createdAt: new Date().toISOString(),
     };
 
-    serverDb.users.set(newUserId, userRecord);
+    await serverDb.saveUser(userRecord);
 
     // Auto-join default workspace
     const defaultWsMembers = workspaceMembersStore.get('ws-default-nexus') || [];
@@ -325,11 +320,10 @@ app.post('/api/v1/auth/verify-otp', (req, res) => {
     workspaceMembersStore.set('ws-default-nexus', defaultWsMembers);
   } else {
     // Existing user verification
-    userRecord = Array.from(serverDb.users.values()).find(
-      (u) => u.email.toLowerCase() === normalizedEmail
-    );
+    userRecord = await serverDb.getUserByEmailOrUsername(normalizedEmail);
     if (userRecord) {
       userRecord.isVerified = true;
+      await serverDb.saveUser(userRecord);
     }
   }
 
@@ -357,7 +351,7 @@ app.post('/api/v1/auth/verify-otp', (req, res) => {
 });
 
 // Login with Email or Username + Password
-app.post('/api/v1/auth/login', (req, res) => {
+app.post('/api/v1/auth/login', async (req, res) => {
   const { identifier, email, password } = req.body;
   const loginKey = (identifier || email || '').trim().toLowerCase();
 
@@ -365,11 +359,7 @@ app.post('/api/v1/auth/login', (req, res) => {
     return res.status(400).json({ success: false, message: 'Username/email and password are required' });
   }
 
-  const user = Array.from(serverDb.users.values()).find(
-    (u) =>
-      u.email.toLowerCase() === loginKey ||
-      u.username?.toLowerCase() === loginKey
-  );
+  const user = await serverDb.getUserByEmailOrUsername(loginKey);
 
   if (!user) {
     return res.status(401).json({ success: false, message: 'Account not found with this username or email' });
@@ -396,14 +386,14 @@ app.post('/api/v1/auth/login', (req, res) => {
 });
 
 // Get current session info
-app.get('/api/v1/auth/me', (req, res) => {
+app.get('/api/v1/auth/me', async (req, res) => {
   const authHeader = req.headers.authorization;
   if (!authHeader) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
   const token = authHeader.replace('Bearer ', '');
   const userId = token.split('-')[2];
-  const user = userId ? serverDb.users.get(userId) : null;
+  const user = userId ? serverDb.users.get(userId) || (await serverDb.getUserByEmailOrUsername(userId)) : null;
   if (!user) {
     return res.status(401).json({ error: 'Session invalid or expired' });
   }
@@ -418,9 +408,6 @@ app.get('/api/v1/auth/me', (req, res) => {
 });
 
 // Workspace Invitations & Members
-const workspaceMembersStore = new Map<string, any[]>();
-workspaceMembersStore.set('ws-default-nexus', []);
-
 app.get('/api/v1/workspaces/:id/members', (req, res) => {
   const members = workspaceMembersStore.get(req.params.id) || [];
   res.json(members);

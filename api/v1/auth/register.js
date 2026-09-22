@@ -1,4 +1,4 @@
-import { users, otpStore, generateVerificationToken } from '../../_db.js';
+import { generateVerificationToken, isUsernameOrEmailTaken, otpStore } from '../../_db.js';
 import { sendOtpEmail } from '../../_mailer.js';
 
 export default async function handler(req, res) {
@@ -32,16 +32,12 @@ export default async function handler(req, res) {
 
   const normalizedEmail = email.trim().toLowerCase();
 
-  const usernameTaken = Array.from(users.values()).some(
-    (u) => u.username?.toLowerCase() === normalizedUsername
-  );
+  const { usernameTaken, emailTaken } = await isUsernameOrEmailTaken(normalizedUsername, normalizedEmail);
+
   if (usernameTaken) {
     return res.status(400).json({ success: false, message: 'Username is already taken' });
   }
 
-  const emailTaken = Array.from(users.values()).some(
-    (u) => u.email?.toLowerCase() === normalizedEmail
-  );
   if (emailTaken) {
     return res.status(400).json({ success: false, message: 'An account with this email already exists' });
   }

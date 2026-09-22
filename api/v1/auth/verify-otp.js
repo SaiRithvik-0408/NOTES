@@ -1,6 +1,6 @@
-import { users, otpStore, decryptVerificationToken } from '../../_db.js';
+import { users, otpStore, decryptVerificationToken, saveUser, getUserByEmailOrUsername } from '../../_db.js';
 
-export default function handler(req, res) {
+export default async function handler(req, res) {
   res.setHeader('Content-Type', 'application/json');
 
   if (req.method !== 'POST') {
@@ -57,7 +57,7 @@ export default function handler(req, res) {
     });
   }
 
-  // Create or activate user
+  // Create or activate user with password persistence
   let userRecord = null;
   if (userData) {
     const newUserId = `user-${Date.now()}`;
@@ -69,18 +69,18 @@ export default function handler(req, res) {
       username: userData.username || normalizedEmail.split('@')[0],
       name: userData.name || 'User',
       email: normalizedEmail,
+      password: userData.password || '',
       color: randomColor,
       isVerified: true,
       createdAt: new Date().toISOString(),
     };
 
-    users.set(newUserId, userRecord);
+    await saveUser(userRecord);
   } else {
-    userRecord = Array.from(users.values()).find(
-      (u) => u.email.toLowerCase() === normalizedEmail
-    );
+    userRecord = await getUserByEmailOrUsername(normalizedEmail);
     if (userRecord) {
       userRecord.isVerified = true;
+      await saveUser(userRecord);
     } else {
       const newUserId = `user-${Date.now()}`;
       userRecord = {
@@ -88,11 +88,12 @@ export default function handler(req, res) {
         username: normalizedEmail.split('@')[0],
         name: normalizedEmail.split('@')[0],
         email: normalizedEmail,
+        password: '',
         color: '#6366F1',
         isVerified: true,
         createdAt: new Date().toISOString(),
       };
-      users.set(newUserId, userRecord);
+      await saveUser(userRecord);
     }
   }
 

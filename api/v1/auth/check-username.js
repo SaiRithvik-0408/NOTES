@@ -1,6 +1,6 @@
-import { users } from '../../_db.js';
+import { getUserByEmailOrUsername } from '../../_db.js';
 
-export default function handler(req, res) {
+export default async function handler(req, res) {
   res.setHeader('Content-Type', 'application/json');
   const username = (req.query.username || '').trim().toLowerCase();
 
@@ -15,9 +15,7 @@ export default function handler(req, res) {
     });
   }
 
-  const existing = Array.from(users.values()).find(
-    (u) => u.username?.toLowerCase() === username
-  );
+  const existing = await getUserByEmailOrUsername(username);
 
   if (existing) {
     return res.status(200).json({ available: false, message: 'Username is already taken' });

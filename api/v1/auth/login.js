@@ -1,6 +1,6 @@
-import { users } from '../../_db.js';
+import { getUserByEmailOrUsername } from '../../_db.js';
 
-export default function handler(req, res) {
+export default async function handler(req, res) {
   res.setHeader('Content-Type', 'application/json');
 
   if (req.method !== 'POST') {
@@ -14,11 +14,7 @@ export default function handler(req, res) {
     return res.status(400).json({ success: false, message: 'Username/email and password are required' });
   }
 
-  const user = Array.from(users.values()).find(
-    (u) =>
-      u.email.toLowerCase() === loginKey ||
-      u.username?.toLowerCase() === loginKey
-  );
+  const user = await getUserByEmailOrUsername(loginKey);
 
   if (!user) {
     return res.status(401).json({ success: false, message: 'Account not found with this username or email' });
