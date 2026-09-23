@@ -25,7 +25,9 @@ export interface UserRecord extends ServerRecord {
 }
 
 const DB_URL = process.env.DATABASE_URL || process.env.POSTGRES_URL || process.env.POSTGRES_PRISMA_URL || null;
-const PERSISTENT_FILE_PATH = path.resolve(process.cwd(), '.nexus_users_store.json');
+const PERSISTENT_FILE_PATH = process.env.VERCEL
+  ? '/tmp/nexus_users_store.json'
+  : path.resolve(process.cwd(), '.nexus_users_store.json');
 
 class ServerDatabase {
   public workspaces: Map<string, ServerRecord> = new Map();

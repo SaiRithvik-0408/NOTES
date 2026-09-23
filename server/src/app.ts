@@ -4,6 +4,7 @@ import cors from 'cors';
 import { serverDb } from './db';
 import { ServerSyncPushRequest, ServerSyncPullResponse } from './types';
 import crypto from 'crypto';
+import { sendOtpEmail, sendChessInviteEmail } from './mailer';
 
 const AUTH_SECRET = process.env.JWT_SECRET || 'nexus-secret-key-2026-auth-gate';
 
@@ -42,11 +43,11 @@ app.use(express.json({ limit: '25mb' }));
 const workspaceMembersStore = new Map<string, any[]>();
 workspaceMembersStore.set('ws-default-nexus', []);
 
-// Health check endpoint
-app.get('/api/v1/health', (req, res) => {
+// Health check endpoints
+app.get(['/api/v1/health', '/api/health', '/health'], (req, res) => {
   res.json({
     status: 'ok',
-    service: 'Nexus Notes Synchronization Service',
+    service: 'Nexus Notes Synchronization Service on Vercel',
     timestamp: new Date().toISOString(),
     version: '1.0.0',
   });
@@ -191,7 +192,6 @@ app.post('/api/v1/auth/send-otp', async (req, res) => {
   // Dispatch real email via nodemailer if SMTP credentials configured
   let mailResult: { sent: boolean; reason?: string; error?: string } = { sent: false, reason: '' };
   try {
-    const { sendOtpEmail } = await import('../../api/_mailer');
     mailResult = await sendOtpEmail(normalizedEmail, code, existingOtp?.userData?.name || 'there');
   } catch (err: any) {
     console.warn('[Nexus Auth] Could not send OTP email via SMTP:', err.message);
@@ -270,7 +270,6 @@ app.post('/api/v1/auth/register', async (req, res) => {
   // Dispatch real email via nodemailer if SMTP credentials configured
   let mailResult: { sent: boolean; reason?: string; error?: string } = { sent: false, reason: '' };
   try {
-    const { sendOtpEmail } = await import('../../api/_mailer');
     mailResult = await sendOtpEmail(normalizedEmail, code, name.trim());
   } catch (err: any) {
     console.warn('[Nexus Auth] Could not send OTP email via SMTP:', err.message);
@@ -541,7 +540,6 @@ app.post('/api/v1/chess/invite', async (req, res) => {
   }
 
   try {
-    const { sendChessInviteEmail } = await import('../../api/_mailer');
     const result = await sendChessInviteEmail(
       email,
       inviterName || 'A Player',

@@ -175,4 +175,3 @@ export async function sendChessInviteEmail(
     return { sent: false, error: err.message };
   }
 }
-
