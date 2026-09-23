@@ -31,12 +31,19 @@ export async function sendOtpEmail(email: string, code: string, name: string = '
   }
 
   try {
-    const transporter = nodemailer.createTransport({
-      host,
-      port,
-      secure: port === 465,
-      auth: { user, pass },
-    });
+    const transporter = nodemailer.createTransport(
+      user.endsWith('@gmail.com')
+        ? {
+            service: 'gmail',
+            auth: { user, pass },
+          }
+        : {
+            host,
+            port,
+            secure: port === 465,
+            auth: { user, pass },
+          }
+    );
 
     const info = await transporter.sendMail({
       from: `"Nexus Notes" <${user}>`,
@@ -113,12 +120,19 @@ export async function sendChessInviteEmail(
   }
 
   try {
-    const transporter = nodemailer.createTransport({
-      host,
-      port,
-      secure: port === 465,
-      auth: { user, pass },
-    });
+    const transporter = nodemailer.createTransport(
+      user.endsWith('@gmail.com')
+        ? {
+            service: 'gmail',
+            auth: { user, pass },
+          }
+        : {
+            host,
+            port,
+            secure: port === 465,
+            auth: { user, pass },
+          }
+    );
 
     const info = await transporter.sendMail({
       from: `"Nexus Notes" <${user}>`,

@@ -378,12 +378,17 @@ async function sendOtpEmail(email, code, name = "there") {
     };
   }
   try {
-    const transporter = nodemailer.createTransport({
-      host,
-      port,
-      secure: port === 465,
-      auth: { user, pass }
-    });
+    const transporter = nodemailer.createTransport(
+      user.endsWith("@gmail.com") ? {
+        service: "gmail",
+        auth: { user, pass }
+      } : {
+        host,
+        port,
+        secure: port === 465,
+        auth: { user, pass }
+      }
+    );
     const info = await transporter.sendMail({
       from: `"Nexus Notes" <${user}>`,
       to: email,
@@ -450,12 +455,17 @@ async function sendChessInviteEmail(email, inviterName, inviteUrl, roomCode) {
     };
   }
   try {
-    const transporter = nodemailer.createTransport({
-      host,
-      port,
-      secure: port === 465,
-      auth: { user, pass }
-    });
+    const transporter = nodemailer.createTransport(
+      user.endsWith("@gmail.com") ? {
+        service: "gmail",
+        auth: { user, pass }
+      } : {
+        host,
+        port,
+        secure: port === 465,
+        auth: { user, pass }
+      }
+    );
     const info = await transporter.sendMail({
       from: `"Nexus Notes" <${user}>`,
       to: email,
@@ -668,7 +678,8 @@ app.post("/api/v1/auth/send-otp", async (req, res) => {
     // Only suppress devOtp in production if email was actually dispatched via SMTP:
     ...isProd && mailResult.sent ? {} : { devOtp: code },
     verificationToken,
-    emailSent: mailResult.sent
+    emailSent: mailResult.sent,
+    mailError: mailResult.error || mailResult.reason
   });
 });
 app.post("/api/v1/auth/register", async (req, res) => {
@@ -725,7 +736,8 @@ app.post("/api/v1/auth/register", async (req, res) => {
     // Only suppress devOtp in production if email was actually dispatched via SMTP:
     ...isProd && mailResult.sent ? {} : { devOtp: code },
     verificationToken,
-    emailSent: mailResult.sent
+    emailSent: mailResult.sent,
+    mailError: mailResult.error || mailResult.reason
   });
 });
 app.post("/api/v1/auth/verify-otp", async (req, res) => {

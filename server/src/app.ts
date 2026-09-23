@@ -208,6 +208,7 @@ app.post('/api/v1/auth/send-otp', async (req, res) => {
     ...(isProd && mailResult.sent ? {} : { devOtp: code }),
     verificationToken,
     emailSent: mailResult.sent,
+    mailError: mailResult.error || mailResult.reason,
   });
 });
 
@@ -286,6 +287,7 @@ app.post('/api/v1/auth/register', async (req, res) => {
     ...(isProd && mailResult.sent ? {} : { devOtp: code }),
     verificationToken,
     emailSent: mailResult.sent,
+    mailError: mailResult.error || mailResult.reason,
   });
 });
 
