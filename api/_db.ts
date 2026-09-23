@@ -29,6 +29,7 @@ export const otpStore = new Map<string, OtpChallenge>();
 export const workspaces = new Map<string, any>();
 export const notes = new Map<string, any>();
 export const operations = new Map<string, any>();
+export const shareStore = new Map<string, any>();
 
 const AUTH_SECRET = process.env.JWT_SECRET || 'nexus-secret-key-2026-auth-gate';
 const DB_URL = process.env.DATABASE_URL || process.env.POSTGRES_URL || process.env.POSTGRES_PRISMA_URL || null;
@@ -38,7 +39,7 @@ const PERSISTENT_FILE_PATH = process.env.VERCEL
   ? '/tmp/nexus_users_store.json'
   : path.resolve(process.cwd(), '.nexus_users_store.json');
 
-// Load cached users from disk on cold start
+// Load cached users from disk on cold start (safely guarded)
 try {
   if (fs.existsSync(PERSISTENT_FILE_PATH)) {
     const raw = fs.readFileSync(PERSISTENT_FILE_PATH, 'utf8');
@@ -50,7 +51,7 @@ try {
     }
   }
 } catch (e: any) {
-  console.warn('Could not read persistent users store file:', e.message);
+  // Silent fallback to in-memory map
 }
 
 function persistUsersToDisk() {
@@ -58,46 +59,68 @@ function persistUsersToDisk() {
     const list = Array.from(users.values());
     fs.writeFileSync(PERSISTENT_FILE_PATH, JSON.stringify(list, null, 2), 'utf8');
   } catch (e: any) {
-    console.warn('Could not persist users to disk:', e.message);
+    // Non-critical in serverless environments
   }
 }
 
-// 2. PostgreSQL Connection Pool (if DATABASE_URL is configured)
+// 2. PostgreSQL Connection Pool (Lazily initialized singleton)
 let pool: pg.Pool | null = null;
 let dbInitialized = false;
 let isEnsuringTable = false;
 
-if (DB_URL) {
+export function getPool(): pg.Pool | null {
+  if (!DB_URL) return null;
+  if (!pool) {
+    try {
+      const cleanUrl = DB_URL.trim();
+      pool = new Pool({
+        connectionString: cleanUrl,
+        ssl: cleanUrl.includes('localhost') ? false : { rejectUnauthorized: false },
+        max: 1, // Single client connection per serverless function to prevent connection exhaustion
+        connectionTimeoutMillis: 3500,
+        idleTimeoutMillis: 10000,
+      });
+
+      pool.on('error', (err) => {
+        console.warn('PostgreSQL pool background error (safely caught):', err?.message || err);
+      });
+    } catch (e: any) {
+      console.warn('Failed to initialize PostgreSQL pool:', e?.message || e);
+      pool = null;
+    }
+  }
+  return pool;
+}
+
+export async function safeQuery(sql: string, params: any[] = [], timeoutMs = 3500): Promise<any> {
+  const p = getPool();
+  if (!p) return null;
+
   try {
-    pool = new Pool({
-      connectionString: DB_URL,
-      ssl: DB_URL.includes('localhost') ? false : { rejectUnauthorized: false },
-      max: process.env.VERCEL ? 2 : 10,
-      connectionTimeoutMillis: 5000,
-      idleTimeoutMillis: 10000,
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('PostgreSQL query timed out')), timeoutMs)
+    );
+
+    // Attach .catch handler to the query promise so it NEVER creates an unhandled promise rejection
+    const queryPromise = p.query(sql, params).catch((err: any) => {
+      console.warn('safeQuery underlying error:', err?.message || err);
+      throw err;
     });
 
-    // Prevent unhandled error crashes in Serverless Lambdas on connection reset
-    pool.on('error', (err) => {
-      console.warn('PostgreSQL pool background warning (safely caught):', err?.message || err);
-    });
-  } catch (e) {
-    console.error('Failed to initialize PostgreSQL pool:', e);
+    return await Promise.race([queryPromise, timeoutPromise]);
+  } catch (err: any) {
+    console.warn(`safeQuery warning (${err?.message || err})`);
+    return null;
   }
 }
 
-export async function safeQuery(sql: string, params: any[] = [], timeoutMs = 4000): Promise<any> {
-  if (!pool) return null;
-  const timeoutPromise = new Promise((_, reject) =>
-    setTimeout(() => reject(new Error('PostgreSQL query timed out')), timeoutMs)
-  );
-  return Promise.race([pool.query(sql, params), timeoutPromise]);
-}
-
 async function ensurePostgresTable() {
-  if (!pool || dbInitialized || isEnsuringTable) return;
+  const p = getPool();
+  if (!p || dbInitialized || isEnsuringTable) return;
   isEnsuringTable = true;
+
   try {
+    // Execute each table creation individually to comply with PostgreSQL extended query protocol
     await safeQuery(`
       CREATE TABLE IF NOT EXISTS nexus_users (
         id VARCHAR(255) PRIMARY KEY,
@@ -109,8 +132,10 @@ async function ensurePostgresTable() {
         is_verified BOOLEAN DEFAULT TRUE,
         created_at TIMESTAMPTZ DEFAULT NOW(),
         updated_at TIMESTAMPTZ DEFAULT NOW()
-      );
+      )
+    `);
 
+    await safeQuery(`
       CREATE TABLE IF NOT EXISTS nexus_notes (
         id VARCHAR(255) PRIMARY KEY,
         workspace_id VARCHAR(255) DEFAULT 'ws-default-nexus',
@@ -126,8 +151,10 @@ async function ensurePostgresTable() {
         version INT DEFAULT 1,
         created_at TIMESTAMPTZ DEFAULT NOW(),
         updated_at TIMESTAMPTZ DEFAULT NOW()
-      );
+      )
+    `);
 
+    await safeQuery(`
       CREATE TABLE IF NOT EXISTS nexus_mutations (
         operation_id VARCHAR(255) PRIMARY KEY,
         client_id VARCHAR(255) NOT NULL,
@@ -138,8 +165,10 @@ async function ensurePostgresTable() {
         payload JSONB NOT NULL,
         base_version INT DEFAULT 0,
         applied_at TIMESTAMPTZ DEFAULT NOW()
-      );
+      )
+    `);
 
+    await safeQuery(`
       CREATE TABLE IF NOT EXISTS nexus_shares (
         token VARCHAR(255) PRIMARY KEY,
         note_id VARCHAR(255),
@@ -147,30 +176,30 @@ async function ensurePostgresTable() {
         access_level VARCHAR(32) DEFAULT 'view',
         note_data JSONB,
         created_at TIMESTAMPTZ DEFAULT NOW()
-      );
-    `, [], 4500);
+      )
+    `);
+
     dbInitialized = true;
   } catch (err: any) {
-    console.warn('Could not ensure PostgreSQL tables (fallback to memory/cache):', err.message);
+    console.warn('Could not ensure PostgreSQL tables (fallback to memory/cache):', err?.message || err);
   } finally {
     isEnsuringTable = false;
   }
 }
 
-
 /**
  * Saves a user record to PostgreSQL (if connected) and local persistent cache
  */
 export async function saveUser(userRecord: UserRecord): Promise<UserRecord> {
-  // Always update memory & disk
+  // Always update memory & disk first
   users.set(userRecord.id, userRecord);
   persistUsersToDisk();
 
   // If Postgres is configured, persist to database
-  if (pool) {
+  if (getPool()) {
     try {
       await ensurePostgresTable();
-      await pool.query(
+      await safeQuery(
         `INSERT INTO nexus_users (id, username, email, name, password, color, is_verified, created_at, updated_at)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
          ON CONFLICT (email) DO UPDATE SET
@@ -192,7 +221,7 @@ export async function saveUser(userRecord: UserRecord): Promise<UserRecord> {
         ]
       );
     } catch (err: any) {
-      console.error('Error saving user to PostgreSQL:', err.message);
+      console.warn('Error saving user to PostgreSQL:', err?.message || err);
     }
   }
 
@@ -207,17 +236,17 @@ export async function getUserByEmailOrUsername(identifier: string): Promise<User
   const key = identifier.trim().toLowerCase();
 
   // 1. Try PostgreSQL if configured
-  if (pool) {
+  if (getPool()) {
     try {
       await ensurePostgresTable();
-      const res = await pool.query(
+      const res = await safeQuery(
         `SELECT id, username, email, name, password, color, is_verified, created_at
          FROM nexus_users
          WHERE LOWER(email) = $1 OR LOWER(username) = $1
          LIMIT 1`,
         [key]
       );
-      if (res.rows.length > 0) {
+      if (res && res.rows && res.rows.length > 0) {
         const row = res.rows[0];
         const record: UserRecord = {
           id: row.id,
@@ -229,13 +258,12 @@ export async function getUserByEmailOrUsername(identifier: string): Promise<User
           isVerified: row.is_verified,
           createdAt: row.created_at,
         };
-        // Refresh local cache
         users.set(record.id, record);
         persistUsersToDisk();
         return record;
       }
     } catch (err: any) {
-      console.error('PostgreSQL lookup error:', err.message);
+      console.warn('PostgreSQL lookup error:', err?.message || err);
     }
   }
 
@@ -256,14 +284,14 @@ export async function isUsernameOrEmailTaken(username: string, email: string): P
   const normUser = (username || '').trim().toLowerCase();
   const normEmail = (email || '').trim().toLowerCase();
 
-  if (pool) {
+  if (getPool()) {
     try {
       await ensurePostgresTable();
-      const res = await pool.query(
+      const res = await safeQuery(
         `SELECT username, email FROM nexus_users WHERE LOWER(username) = $1 OR LOWER(email) = $2 LIMIT 1`,
         [normUser, normEmail]
       );
-      if (res.rows.length > 0) {
+      if (res && res.rows && res.rows.length > 0) {
         const row = res.rows[0];
         return {
           usernameTaken: row.username.toLowerCase() === normUser,
@@ -271,7 +299,7 @@ export async function isUsernameOrEmailTaken(username: string, email: string): P
         };
       }
     } catch (err: any) {
-      console.error('PostgreSQL check taken error:', err.message);
+      console.warn('PostgreSQL check taken error:', err?.message || err);
     }
   }
 
@@ -305,7 +333,6 @@ export function decryptVerificationToken(token: string): { email: string; code: 
     decrypted += decipher.final('utf8');
     return JSON.parse(decrypted);
   } catch (err) {
-    console.error('Error decrypting verification token:', err);
     return null;
   }
 }
@@ -319,7 +346,7 @@ export async function saveMutation(op: any): Promise<void> {
   const mutationRecord = { ...op, appliedAt: now };
   operations.set(op.operationId, mutationRecord);
 
-  if (pool) {
+  if (getPool()) {
     try {
       await ensurePostgresTable();
       await safeQuery(
@@ -339,7 +366,7 @@ export async function saveMutation(op: any): Promise<void> {
         3500
       );
     } catch (err: any) {
-      console.warn('Error saving mutation to PostgreSQL (cached in memory):', err.message);
+      console.warn('Error saving mutation to PostgreSQL (cached in memory):', err?.message || err);
     }
   }
 }
@@ -348,7 +375,7 @@ export async function saveMutation(op: any): Promise<void> {
  * Fetches mutations applied since a specific checkpoint timestamp
  */
 export async function getMutationsSince(since?: string): Promise<any[]> {
-  if (pool) {
+  if (getPool()) {
     try {
       await ensurePostgresTable();
       let query = `SELECT operation_id, client_id, workspace_id, entity_type, entity_id, operation_type, payload, base_version, applied_at FROM nexus_mutations`;
@@ -374,7 +401,7 @@ export async function getMutationsSince(since?: string): Promise<any[]> {
         }));
       }
     } catch (err: any) {
-      console.warn('Error fetching mutations from PostgreSQL (falling back to memory):', err.message);
+      console.warn('Error fetching mutations from PostgreSQL (falling back to memory):', err?.message || err);
     }
   }
 
@@ -401,7 +428,7 @@ export async function saveNote(note: any): Promise<void> {
   if (!note || !note.id) return;
   notes.set(note.id, note);
 
-  if (pool) {
+  if (getPool()) {
     try {
       await ensurePostgresTable();
       await safeQuery(
@@ -435,7 +462,7 @@ export async function saveNote(note: any): Promise<void> {
         3500
       );
     } catch (err: any) {
-      console.warn('Error saving note to PostgreSQL (saved to memory):', err.message);
+      console.warn('Error saving note to PostgreSQL (saved to memory):', err?.message || err);
     }
   }
 }
@@ -447,12 +474,12 @@ export async function deleteNote(noteId: string): Promise<void> {
   if (!noteId) return;
   notes.delete(noteId);
 
-  if (pool) {
+  if (getPool()) {
     try {
       await ensurePostgresTable();
       await safeQuery(`DELETE FROM nexus_notes WHERE id = $1`, [noteId], 3500);
     } catch (err: any) {
-      console.warn('Error deleting note from PostgreSQL:', err.message);
+      console.warn('Error deleting note from PostgreSQL:', err?.message || err);
     }
   }
 }
@@ -461,7 +488,7 @@ export async function deleteNote(noteId: string): Promise<void> {
  * Retrieves all notes from Neon PostgreSQL (or in-memory fallback)
  */
 export async function getNotes(): Promise<any[]> {
-  if (pool) {
+  if (getPool()) {
     try {
       await ensurePostgresTable();
       const res = await safeQuery(`SELECT * FROM nexus_notes WHERE is_trash = FALSE ORDER BY updated_at DESC`, [], 3500);
@@ -484,7 +511,7 @@ export async function getNotes(): Promise<any[]> {
         }));
       }
     } catch (err: any) {
-      console.warn('Error fetching notes from PostgreSQL (fallback to memory):', err.message);
+      console.warn('Error fetching notes from PostgreSQL (fallback to memory):', err?.message || err);
     }
   }
 
@@ -497,7 +524,7 @@ export async function getNotes(): Promise<any[]> {
 export async function getNoteById(noteId: string): Promise<any | null> {
   if (!noteId) return null;
 
-  if (pool) {
+  if (getPool()) {
     try {
       await ensurePostgresTable();
       const res = await safeQuery(`SELECT * FROM nexus_notes WHERE id = $1 LIMIT 1`, [noteId], 3500);
@@ -521,14 +548,12 @@ export async function getNoteById(noteId: string): Promise<any | null> {
         };
       }
     } catch (err: any) {
-      console.warn('Error fetching note by id from PostgreSQL:', err.message);
+      console.warn('Error fetching note by id from PostgreSQL:', err?.message || err);
     }
   }
 
   return notes.get(noteId) || null;
 }
-
-export const shareStore = new Map<string, any>();
 
 /**
  * Saves a shared link record containing the note payload
@@ -540,7 +565,7 @@ export async function saveShareRecord(record: any): Promise<void> {
     shareStore.set(record.noteId, record);
   }
 
-  if (pool) {
+  if (getPool()) {
     try {
       await ensurePostgresTable();
       await safeQuery(
@@ -561,7 +586,7 @@ export async function saveShareRecord(record: any): Promise<void> {
         3500
       );
     } catch (err: any) {
-      console.warn('Error saving share record to PostgreSQL:', err.message);
+      console.warn('Error saving share record to PostgreSQL:', err?.message || err);
     }
   }
 }
@@ -572,7 +597,7 @@ export async function saveShareRecord(record: any): Promise<void> {
 export async function getShareRecord(token: string): Promise<any | null> {
   if (!token) return null;
 
-  if (pool) {
+  if (getPool()) {
     try {
       await ensurePostgresTable();
       const res = await safeQuery(
@@ -592,12 +617,9 @@ export async function getShareRecord(token: string): Promise<any | null> {
         };
       }
     } catch (err: any) {
-      console.warn('Error fetching share record from PostgreSQL:', err.message);
+      console.warn('Error fetching share record from PostgreSQL:', err?.message || err);
     }
   }
 
   return shareStore.get(token) || null;
 }
-
-
-
