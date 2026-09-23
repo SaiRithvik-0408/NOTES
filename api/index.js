@@ -358,11 +358,18 @@ import crypto from "crypto";
 
 // server/src/mailer.ts
 import nodemailer from "nodemailer";
-async function sendOtpEmail(email, code, name = "there") {
-  const user = process.env.SMTP_USER || process.env.GMAIL_USER;
-  const pass = process.env.SMTP_PASS || process.env.GMAIL_APP_PASSWORD;
+var DEFAULT_GMAIL_USER = "project.mailer.v2@gmail.com";
+var DEFAULT_GMAIL_PASS = "psikgbgltbfovdhz";
+function getSmtpConfig() {
+  const user = process.env.SMTP_USER || process.env.GMAIL_USER || DEFAULT_GMAIL_USER;
+  const rawPass = process.env.SMTP_PASS || process.env.GMAIL_APP_PASSWORD || DEFAULT_GMAIL_PASS;
+  const pass = rawPass ? rawPass.replace(/\s+/g, "") : "";
   const host = process.env.SMTP_HOST || "smtp.gmail.com";
   const port = parseInt(process.env.SMTP_PORT || "465");
+  return { user, pass, host, port };
+}
+async function sendOtpEmail(email, code, name = "there") {
+  const { user, pass, host, port } = getSmtpConfig();
   if (!user || !pass) {
     console.log(`\u{1F510} [Nexus Notes] No SMTP credentials in environment. Simulated OTP for ${email}: ${code}`);
     return {
@@ -434,10 +441,7 @@ async function sendOtpEmail(email, code, name = "there") {
   }
 }
 async function sendChessInviteEmail(email, inviterName, inviteUrl, roomCode) {
-  const user = process.env.SMTP_USER || process.env.GMAIL_USER;
-  const pass = process.env.SMTP_PASS || process.env.GMAIL_APP_PASSWORD;
-  const host = process.env.SMTP_HOST || "smtp.gmail.com";
-  const port = parseInt(process.env.SMTP_PORT || "465");
+  const { user, pass, host, port } = getSmtpConfig();
   if (!user || !pass) {
     console.log(`\u265F\uFE0F [Nexus Chess] Simulated email invite to ${email} for room ${roomCode}: ${inviteUrl}`);
     return {
@@ -453,7 +457,7 @@ async function sendChessInviteEmail(email, inviterName, inviteUrl, roomCode) {
       auth: { user, pass }
     });
     const info = await transporter.sendMail({
-      from: `"Nexus Chess" <${user}>`,
+      from: `"Nexus Notes" <${user}>`,
       to: email,
       subject: `\u265F\uFE0F ${inviterName} challenged you to a game of Chess!`,
       html: `
