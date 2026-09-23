@@ -2,7 +2,7 @@
   "version": 2,
   "headers": [
     {
-      "source": "/api/(.*)",
+      "source": "/api(.*)",
       "headers": [
         { "key": "Access-Control-Allow-Credentials", "value": "true" },
         { "key": "Access-Control-Allow-Origin", "value": "*" },
@@ -13,8 +13,8 @@
   ],
   "rewrites": [
     {
-      "source": "/api/(.*)",
-      "destination": "/api/index.ts"
+      "source": "/api(.*)",
+      "destination": "/api/index"
     },
     {
       "source": "/((?!api/).*)",

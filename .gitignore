@@ -24,4 +24,5 @@ pnpm-debug.log*
 *.js
 *.js.map
 !public/sw.js
+!api/index.js
 
