@@ -1,50 +1,17 @@
 import type { ApiRequest, ApiResponse } from '../_types';
+import { setCorsHeaders, parseBody } from '../_types';
 import { saveMutation, saveNote, deleteNote, getMutationsSince } from '../_db';
-
-async function parsePayload(req: ApiRequest): Promise<any> {
-  if (req.body) {
-    if (typeof req.body === 'string') {
-      try {
-        return JSON.parse(req.body);
-      } catch {
-        return null;
-      }
-    }
-    return req.body;
-  }
-
-  // Handle unparsed stream if applicable
-  return new Promise((resolve) => {
-    let data = '';
-    req.on('data', (chunk) => {
-      data += chunk;
-    });
-    req.on('end', () => {
-      try {
-        resolve(data ? JSON.parse(data) : null);
-      } catch {
-        resolve(null);
-      }
-    });
-    req.on('error', () => {
-      resolve(null);
-    });
-  });
-}
 
 export default async function handler(req: ApiRequest, res: ApiResponse) {
   try {
-    res.setHeader('Content-Type', 'application/json');
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    setCorsHeaders(res);
 
     if (req.method === 'OPTIONS') {
       return res.status(200).end();
     }
 
     if (req.method === 'POST') {
-      const op = await parsePayload(req);
+      const op = await parseBody(req);
       if (!op || !op.operationId) {
         return res.status(400).json({ error: 'Invalid mutation payload: operationId required' });
       }
@@ -106,4 +73,3 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     });
   }
 }
-

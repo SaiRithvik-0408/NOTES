@@ -1,11 +1,16 @@
 import type { ApiRequest, ApiResponse } from '../_types';
+import { setCorsHeaders, parseBody } from '../_types';
 import { saveShareRecord, getShareRecord, getNoteById, saveNote } from '../_db';
 
 export default async function handler(req: ApiRequest, res: ApiResponse) {
-  res.setHeader('Content-Type', 'application/json');
+  try {
+    setCorsHeaders(res);
 
-  if (req.method === 'GET') {
-    try {
+    if (req.method === 'OPTIONS') {
+      return res.status(200).end();
+    }
+
+    if (req.method === 'GET') {
       const token = (req.query?.token as string) || (req.query?.share as string) || (req.query?.id as string);
       if (!token) {
         return res.status(400).json({ error: 'Missing share token or note id' });
@@ -34,15 +39,11 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       }
 
       return res.status(404).json({ error: 'Shared note not found' });
-    } catch (err: any) {
-      console.error('Error in GET /api/v1/share:', err.message);
-      return res.status(500).json({ error: 'Failed to retrieve shared record' });
     }
-  }
 
-  if (req.method === 'POST') {
-    try {
-      const { token, noteId, workspaceId, accessLevel, noteData } = req.body;
+    if (req.method === 'POST') {
+      const body = await parseBody(req);
+      const { token, noteId, workspaceId, accessLevel, noteData } = body || {};
       const shareToken = token || `note-${(noteId || '').replace('note-', '')}`;
 
       const record = {
@@ -62,11 +63,11 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       }
 
       return res.status(200).json({ success: true, record });
-    } catch (err: any) {
-      console.error('Error in POST /api/v1/share:', err.message);
-      return res.status(500).json({ error: 'Failed to create share link' });
     }
-  }
 
-  return res.status(405).json({ error: 'Method not allowed' });
+    return res.status(405).json({ error: 'Method not allowed' });
+  } catch (err: any) {
+    console.error('Unhandled error in /api/v1/share:', err?.message || err);
+    return res.status(500).json({ error: 'Failed to process share request' });
+  }
 }

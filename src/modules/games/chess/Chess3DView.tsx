@@ -1,6 +1,6 @@
 import React, { useRef, useState, useMemo } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
-import { OrbitControls, Text, Float, Outlines } from '@react-three/drei';
+import { OrbitControls, Text, Float, Edges } from '@react-three/drei';
 import * as THREE from 'three';
 import { Box, IconButton, Tooltip } from '@mui/material';
 import { CenterFocusStrong, RotateLeft } from '@mui/icons-material';
@@ -34,14 +34,14 @@ const Piece3D: React.FC<Piece3DProps> = ({ type, color, isSelected, themeMode })
   const isNeon = themeMode === '3d-neon';
   const groupRef = useRef<THREE.Group>(null);
 
-  // Neon colors vs Realistic Wood colors
+  // Neon colors vs Realistic Wood / Porcelain colors
   const primaryColor = isNeon
     ? color === 'w'
       ? '#06B6D4' // Cyan neon
       : '#F43F5E' // Crimson neon
     : color === 'w'
-    ? '#F8FAFC' // Polished Ivory/Maple
-    : '#1E293B'; // Deep Walnut Obsidian
+    ? '#FFFFFF' // Bright Pure White (crystal clear against light squares)
+    : '#0F172A'; // Deep Obsidian Midnight
 
   const emissiveColor = isNeon
     ? color === 'w'
@@ -53,10 +53,15 @@ const Piece3D: React.FC<Piece3DProps> = ({ type, color, isSelected, themeMode })
 
   const emissiveIntensity = isNeon ? 0.6 : isSelected ? 0.4 : 0.05;
 
-  // High contrast outline: Jet black outline on White pieces, Pure bright white outline on Black pieces
+  // High contrast outline: Jet black outline on White pieces, Brilliant glowing-white outline on Black pieces;
+  // In Neon mode: Electric brilliant cyan-white glow on White pieces, Electric brilliant pink-white glow on Black pieces
   const outlineColor = isNeon
-    ? color === 'w' ? '#083344' : '#4C0519'
-    : color === 'w' ? '#090D16' : '#FFFFFF';
+    ? color === 'w' ? '#A5F3FC' : '#FECDD3'
+    : color === 'w' ? '#000000' : '#FFFFFF';
+
+  const rimAccentColor = isNeon
+    ? color === 'w' ? '#22D3EE' : '#FB7185'
+    : color === 'w' ? '#000000' : '#FFFFFF';
 
   useFrame(() => {
     if (groupRef.current && isSelected) {
@@ -78,18 +83,18 @@ const Piece3D: React.FC<Piece3DProps> = ({ type, color, isSelected, themeMode })
           emissive={emissiveColor}
           emissiveIntensity={emissiveIntensity}
         />
-        <Outlines thickness={0.025} color={outlineColor} />
+        <Edges threshold={15} color={outlineColor} />
       </mesh>
 
-      {/* High-Contrast Pedestal Rim Ring (Black on White piece, White on Black piece) */}
+      {/* High-Contrast Pedestal Rim Ring (Black on White piece, White on Black piece, Neon accents) */}
       <mesh position={[0, 0.015, 0]}>
-        <cylinderGeometry args={[0.396, 0.404, 0.03, 32]} />
+        <cylinderGeometry args={[0.398, 0.406, 0.03, 32]} />
         <meshStandardMaterial
-          color={outlineColor}
+          color={rimAccentColor}
           roughness={0.2}
-          metalness={color === 'w' ? 0.1 : 0.9}
-          emissive={color === 'w' ? '#000000' : '#FFFFFF'}
-          emissiveIntensity={color === 'w' ? 0 : 0.35}
+          metalness={isNeon ? 0.8 : color === 'w' ? 0.1 : 0.9}
+          emissive={rimAccentColor}
+          emissiveIntensity={isNeon ? 0.8 : color === 'w' ? 0 : 0.45}
         />
       </mesh>
 
@@ -103,18 +108,18 @@ const Piece3D: React.FC<Piece3DProps> = ({ type, color, isSelected, themeMode })
           emissive={emissiveColor}
           emissiveIntensity={emissiveIntensity}
         />
-        <Outlines thickness={0.02} color={outlineColor} />
+        <Edges threshold={15} color={outlineColor} />
       </mesh>
 
       {/* High-Contrast Collar Outline Trim */}
       <mesh position={[0, 0.17, 0]}>
-        <torusGeometry args={[0.335, 0.014, 12, 32]} />
+        <torusGeometry args={[0.335, 0.016, 12, 32]} />
         <meshStandardMaterial
-          color={outlineColor}
+          color={rimAccentColor}
           roughness={0.2}
-          metalness={color === 'w' ? 0.1 : 0.9}
-          emissive={color === 'w' ? '#000000' : '#FFFFFF'}
-          emissiveIntensity={color === 'w' ? 0 : 0.35}
+          metalness={isNeon ? 0.8 : color === 'w' ? 0.1 : 0.9}
+          emissive={rimAccentColor}
+          emissiveIntensity={isNeon ? 0.8 : color === 'w' ? 0 : 0.45}
         />
       </mesh>
 
@@ -129,17 +134,19 @@ const Piece3D: React.FC<Piece3DProps> = ({ type, color, isSelected, themeMode })
               emissive={emissiveColor}
               emissiveIntensity={emissiveIntensity}
             />
-            <Outlines thickness={0.02} color={outlineColor} />
+            <Edges threshold={15} color={outlineColor} />
           </mesh>
-          {/* Pawn Collar */}
+          {/* Pawn Collar Accent Trim */}
           <mesh position={[0, 0.33, 0]} castShadow>
             <cylinderGeometry args={[0.2, 0.16, 0.04, 22]} />
             <meshStandardMaterial
-              color={primaryColor}
-              roughness={0.3}
-              emissive={emissiveColor}
-              emissiveIntensity={emissiveIntensity}
+              color={rimAccentColor}
+              roughness={0.2}
+              metalness={isNeon ? 0.8 : color === 'w' ? 0.1 : 0.9}
+              emissive={rimAccentColor}
+              emissiveIntensity={isNeon ? 0.8 : color === 'w' ? 0 : 0.45}
             />
+            <Edges threshold={15} color={outlineColor} />
           </mesh>
           {/* Head Sphere */}
           <mesh position={[0, 0.44, 0]} castShadow>
@@ -150,7 +157,7 @@ const Piece3D: React.FC<Piece3DProps> = ({ type, color, isSelected, themeMode })
               emissive={emissiveColor}
               emissiveIntensity={emissiveIntensity}
             />
-            <Outlines thickness={0.02} color={outlineColor} />
+            <Edges threshold={15} color={outlineColor} />
           </mesh>
         </group>
       )}
@@ -167,7 +174,7 @@ const Piece3D: React.FC<Piece3DProps> = ({ type, color, isSelected, themeMode })
               emissive={emissiveColor}
               emissiveIntensity={emissiveIntensity}
             />
-            <Outlines thickness={0.02} color={outlineColor} />
+            <Edges threshold={15} color={outlineColor} />
           </mesh>
           {/* Turret Platform */}
           <mesh position={[0, 0.5, 0]} castShadow>
@@ -178,7 +185,7 @@ const Piece3D: React.FC<Piece3DProps> = ({ type, color, isSelected, themeMode })
               emissive={emissiveColor}
               emissiveIntensity={emissiveIntensity}
             />
-            <Outlines thickness={0.02} color={outlineColor} />
+            <Edges threshold={15} color={outlineColor} />
           </mesh>
           {/* 4 Crenellated Parapets */}
           <mesh position={[0.18, 0.58, 0]} castShadow>
@@ -189,6 +196,7 @@ const Piece3D: React.FC<Piece3DProps> = ({ type, color, isSelected, themeMode })
               emissive={emissiveColor}
               emissiveIntensity={emissiveIntensity}
             />
+            <Edges threshold={15} color={outlineColor} />
           </mesh>
           <mesh position={[-0.18, 0.58, 0]} castShadow>
             <boxGeometry args={[0.08, 0.09, 0.16]} />
@@ -198,6 +206,7 @@ const Piece3D: React.FC<Piece3DProps> = ({ type, color, isSelected, themeMode })
               emissive={emissiveColor}
               emissiveIntensity={emissiveIntensity}
             />
+            <Edges threshold={15} color={outlineColor} />
           </mesh>
           <mesh position={[0, 0.58, 0.18]} castShadow>
             <boxGeometry args={[0.16, 0.09, 0.08]} />
@@ -207,6 +216,7 @@ const Piece3D: React.FC<Piece3DProps> = ({ type, color, isSelected, themeMode })
               emissive={emissiveColor}
               emissiveIntensity={emissiveIntensity}
             />
+            <Edges threshold={15} color={outlineColor} />
           </mesh>
           <mesh position={[0, 0.58, -0.18]} castShadow>
             <boxGeometry args={[0.16, 0.09, 0.08]} />
@@ -216,6 +226,7 @@ const Piece3D: React.FC<Piece3DProps> = ({ type, color, isSelected, themeMode })
               emissive={emissiveColor}
               emissiveIntensity={emissiveIntensity}
             />
+            <Edges threshold={15} color={outlineColor} />
           </mesh>
         </group>
       )}
@@ -232,7 +243,7 @@ const Piece3D: React.FC<Piece3DProps> = ({ type, color, isSelected, themeMode })
               emissive={emissiveColor}
               emissiveIntensity={emissiveIntensity}
             />
-            <Outlines thickness={0.02} color={outlineColor} />
+            <Edges threshold={15} color={outlineColor} />
           </mesh>
           {/* Sculpted Head & Brow */}
           <mesh position={[0, 0.48, 0.06]} rotation={[0.42, 0, 0]} castShadow>
@@ -243,7 +254,7 @@ const Piece3D: React.FC<Piece3DProps> = ({ type, color, isSelected, themeMode })
               emissive={emissiveColor}
               emissiveIntensity={emissiveIntensity}
             />
-            <Outlines thickness={0.02} color={outlineColor} />
+            <Edges threshold={15} color={outlineColor} />
           </mesh>
           {/* Snout / Muzzle */}
           <mesh position={[0, 0.38, 0.22]} rotation={[0.7, 0, 0]} castShadow>
@@ -254,6 +265,7 @@ const Piece3D: React.FC<Piece3DProps> = ({ type, color, isSelected, themeMode })
               emissive={emissiveColor}
               emissiveIntensity={emissiveIntensity}
             />
+            <Edges threshold={15} color={outlineColor} />
           </mesh>
           {/* Mane Crest */}
           <mesh position={[0, 0.44, -0.14]} rotation={[-0.35, 0, 0]} castShadow>
@@ -299,17 +311,19 @@ const Piece3D: React.FC<Piece3DProps> = ({ type, color, isSelected, themeMode })
               emissive={emissiveColor}
               emissiveIntensity={emissiveIntensity}
             />
-            <Outlines thickness={0.02} color={outlineColor} />
+            <Edges threshold={15} color={outlineColor} />
           </mesh>
-          {/* Collar Rim */}
+          {/* Collar Rim Accent Trim */}
           <mesh position={[0, 0.52, 0]} castShadow>
             <cylinderGeometry args={[0.22, 0.18, 0.04, 22]} />
             <meshStandardMaterial
-              color={primaryColor}
-              roughness={0.3}
-              emissive={emissiveColor}
-              emissiveIntensity={emissiveIntensity}
+              color={rimAccentColor}
+              roughness={0.2}
+              metalness={isNeon ? 0.8 : color === 'w' ? 0.1 : 0.9}
+              emissive={rimAccentColor}
+              emissiveIntensity={isNeon ? 0.8 : color === 'w' ? 0 : 0.45}
             />
+            <Edges threshold={15} color={outlineColor} />
           </mesh>
           {/* Mitre Teardrop Dome */}
           <mesh position={[0, 0.68, 0]} castShadow>
@@ -320,7 +334,7 @@ const Piece3D: React.FC<Piece3DProps> = ({ type, color, isSelected, themeMode })
               emissive={emissiveColor}
               emissiveIntensity={emissiveIntensity}
             />
-            <Outlines thickness={0.02} color={outlineColor} />
+            <Edges threshold={15} color={outlineColor} />
           </mesh>
           {/* Pointed Mitre Peak */}
           <mesh position={[0, 0.8, 0]} castShadow>
@@ -331,6 +345,7 @@ const Piece3D: React.FC<Piece3DProps> = ({ type, color, isSelected, themeMode })
               emissive={emissiveColor}
               emissiveIntensity={emissiveIntensity}
             />
+            <Edges threshold={15} color={outlineColor} />
           </mesh>
           {/* Finial Ball */}
           <mesh position={[0, 0.92, 0]} castShadow>
@@ -355,17 +370,19 @@ const Piece3D: React.FC<Piece3DProps> = ({ type, color, isSelected, themeMode })
               emissive={emissiveColor}
               emissiveIntensity={emissiveIntensity}
             />
-            <Outlines thickness={0.02} color={outlineColor} />
+            <Edges threshold={15} color={outlineColor} />
           </mesh>
-          {/* Mid-waist Ring */}
+          {/* Mid-waist Ring Accent Trim */}
           <mesh position={[0, 0.58, 0]} castShadow>
             <torusGeometry args={[0.21, 0.03, 12, 24]} />
             <meshStandardMaterial
-              color={primaryColor}
-              roughness={0.3}
-              emissive={emissiveColor}
-              emissiveIntensity={emissiveIntensity}
+              color={rimAccentColor}
+              roughness={0.2}
+              metalness={isNeon ? 0.8 : color === 'w' ? 0.1 : 0.9}
+              emissive={rimAccentColor}
+              emissiveIntensity={isNeon ? 0.8 : color === 'w' ? 0 : 0.45}
             />
+            <Edges threshold={15} color={outlineColor} />
           </mesh>
           {/* Flared Coronet Basin */}
           <mesh position={[0, 0.74, 0]} castShadow>
@@ -376,7 +393,7 @@ const Piece3D: React.FC<Piece3DProps> = ({ type, color, isSelected, themeMode })
               emissive={emissiveColor}
               emissiveIntensity={emissiveIntensity}
             />
-            <Outlines thickness={0.02} color={outlineColor} />
+            <Edges threshold={15} color={outlineColor} />
           </mesh>
           {/* Coronet Spheres */}
           {Array.from({ length: 6 }).map((_, i) => {
@@ -417,27 +434,31 @@ const Piece3D: React.FC<Piece3DProps> = ({ type, color, isSelected, themeMode })
               emissive={emissiveColor}
               emissiveIntensity={emissiveIntensity}
             />
-            <Outlines thickness={0.02} color={outlineColor} />
+            <Edges threshold={15} color={outlineColor} />
           </mesh>
-          {/* Mid-waist Ring */}
+          {/* Mid-waist Ring Accent Trim */}
           <mesh position={[0, 0.65, 0]} castShadow>
             <torusGeometry args={[0.24, 0.035, 12, 24]} />
             <meshStandardMaterial
-              color={primaryColor}
-              roughness={0.3}
-              emissive={emissiveColor}
-              emissiveIntensity={emissiveIntensity}
+              color={rimAccentColor}
+              roughness={0.2}
+              metalness={isNeon ? 0.8 : color === 'w' ? 0.1 : 0.9}
+              emissive={rimAccentColor}
+              emissiveIntensity={isNeon ? 0.8 : color === 'w' ? 0 : 0.45}
             />
+            <Edges threshold={15} color={outlineColor} />
           </mesh>
-          {/* Crown Head Cap */}
+          {/* Crown Head Cap Accent Trim */}
           <mesh position={[0, 0.8, 0]} castShadow>
             <cylinderGeometry args={[0.28, 0.22, 0.18, 24]} />
             <meshStandardMaterial
-              color={primaryColor}
-              roughness={0.3}
-              emissive={emissiveColor}
-              emissiveIntensity={emissiveIntensity}
+              color={rimAccentColor}
+              roughness={0.2}
+              metalness={isNeon ? 0.8 : color === 'w' ? 0.1 : 0.9}
+              emissive={rimAccentColor}
+              emissiveIntensity={isNeon ? 0.8 : color === 'w' ? 0 : 0.45}
             />
+            <Edges threshold={15} color={outlineColor} />
           </mesh>
           {/* Crown Dome */}
           <mesh position={[0, 0.9, 0]} castShadow>
@@ -448,7 +469,7 @@ const Piece3D: React.FC<Piece3DProps> = ({ type, color, isSelected, themeMode })
               emissive={emissiveColor}
               emissiveIntensity={emissiveIntensity}
             />
-            <Outlines thickness={0.02} color={outlineColor} />
+            <Edges threshold={15} color={outlineColor} />
           </mesh>
           {/* Royal Cross - Vertical bar */}
           <mesh position={[0, 1.05, 0]} castShadow>
@@ -505,8 +526,9 @@ const Board3D: React.FC<Board3DProps> = ({
 }) => {
   const isNeon = themeMode === '3d-neon';
 
-  // High-contrast tile palette: in Neon mode, distinct indigo vs midnight obsidian with glowing border
-  const lightTileColor = isNeon ? '#1E1B4B' : '#F8FAFC';
+  // High-contrast tile palette: in Classic, soft light slate marble (#E2E8F0) makes pure white pieces pop;
+  // in Neon mode, deep indigo (#1E1B4B) vs midnight obsidian (#090D1A) makes glowing cyan and crimson pop!
+  const lightTileColor = isNeon ? '#1E1B4B' : '#E2E8F0';
   const darkTileColor = isNeon ? '#090D1A' : '#334155';
   const frameColor = isNeon ? '#0B0F19' : '#1E293B';
   const coordColor = isNeon ? '#38BDF8' : '#F8FAFC';
@@ -811,17 +833,26 @@ export const Chess3DView: React.FC<Chess3DViewProps> = ({
         camera={{ position: [0, 7.5, cameraZ], fov: 45 }}
         style={{ width: '100%', height: '100%' }}
       >
-        <ambientLight intensity={isNeon ? 0.6 : 0.8} />
+        <ambientLight intensity={isNeon ? 0.7 : 0.9} />
         <directionalLight
           position={[6, 12, 8]}
-          intensity={1.4}
+          intensity={1.5}
           castShadow
           shadow-mapSize-width={1024}
           shadow-mapSize-height={1024}
           shadow-bias={-0.0001}
         />
-        <pointLight position={[-6, 8, -6]} intensity={0.6} color={isNeon ? '#06B6D4' : '#FFFFFF'} />
-        <pointLight position={[6, 8, -6]} intensity={0.6} color={isNeon ? '#F43F5E' : '#FFFFFF'} />
+        {/* Opposing fill/rim light for three-dimensional silhouette visibility from all angles */}
+        <directionalLight
+          position={[-6, 10, -8]}
+          intensity={isNeon ? 1.0 : 0.85}
+          color={isNeon ? '#06B6D4' : '#E2E8F0'}
+        />
+        <hemisphereLight
+          args={[isNeon ? '#06B6D4' : '#FFFFFF', isNeon ? '#0F172A' : '#334155', isNeon ? 0.4 : 0.55]}
+        />
+        <pointLight position={[-6, 8, -6]} intensity={0.7} color={isNeon ? '#06B6D4' : '#FFFFFF'} />
+        <pointLight position={[6, 8, -6]} intensity={0.7} color={isNeon ? '#F43F5E' : '#FFFFFF'} />
 
         <Board3D
           board={board}
