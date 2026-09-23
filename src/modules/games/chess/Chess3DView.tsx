@@ -1,6 +1,6 @@
 import React, { useRef, useState, useMemo } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
-import { OrbitControls, Text, Float } from '@react-three/drei';
+import { OrbitControls, Text, Float, Outlines } from '@react-three/drei';
 import * as THREE from 'three';
 import { Box, IconButton, Tooltip } from '@mui/material';
 import { CenterFocusStrong, RotateLeft } from '@mui/icons-material';
@@ -53,6 +53,11 @@ const Piece3D: React.FC<Piece3DProps> = ({ type, color, isSelected, themeMode })
 
   const emissiveIntensity = isNeon ? 0.6 : isSelected ? 0.4 : 0.05;
 
+  // High contrast outline: Jet black outline on White pieces, Pure bright white outline on Black pieces
+  const outlineColor = isNeon
+    ? color === 'w' ? '#083344' : '#4C0519'
+    : color === 'w' ? '#090D16' : '#FFFFFF';
+
   useFrame(() => {
     if (groupRef.current && isSelected) {
       groupRef.current.position.y = 0.25 + Math.sin(Date.now() * 0.006) * 0.08;
@@ -73,7 +78,21 @@ const Piece3D: React.FC<Piece3DProps> = ({ type, color, isSelected, themeMode })
           emissive={emissiveColor}
           emissiveIntensity={emissiveIntensity}
         />
+        <Outlines thickness={0.025} color={outlineColor} />
       </mesh>
+
+      {/* High-Contrast Pedestal Rim Ring (Black on White piece, White on Black piece) */}
+      <mesh position={[0, 0.015, 0]}>
+        <cylinderGeometry args={[0.396, 0.404, 0.03, 32]} />
+        <meshStandardMaterial
+          color={outlineColor}
+          roughness={0.2}
+          metalness={color === 'w' ? 0.1 : 0.9}
+          emissive={color === 'w' ? '#000000' : '#FFFFFF'}
+          emissiveIntensity={color === 'w' ? 0 : 0.35}
+        />
+      </mesh>
+
       {/* Pedestal Collar */}
       <mesh position={[0, 0.17, 0]} castShadow>
         <cylinderGeometry args={[0.26, 0.34, 0.04, 28]} />
@@ -83,6 +102,19 @@ const Piece3D: React.FC<Piece3DProps> = ({ type, color, isSelected, themeMode })
           metalness={isNeon ? 0.8 : 0.12}
           emissive={emissiveColor}
           emissiveIntensity={emissiveIntensity}
+        />
+        <Outlines thickness={0.02} color={outlineColor} />
+      </mesh>
+
+      {/* High-Contrast Collar Outline Trim */}
+      <mesh position={[0, 0.17, 0]}>
+        <torusGeometry args={[0.335, 0.014, 12, 32]} />
+        <meshStandardMaterial
+          color={outlineColor}
+          roughness={0.2}
+          metalness={color === 'w' ? 0.1 : 0.9}
+          emissive={color === 'w' ? '#000000' : '#FFFFFF'}
+          emissiveIntensity={color === 'w' ? 0 : 0.35}
         />
       </mesh>
 
@@ -97,6 +129,7 @@ const Piece3D: React.FC<Piece3DProps> = ({ type, color, isSelected, themeMode })
               emissive={emissiveColor}
               emissiveIntensity={emissiveIntensity}
             />
+            <Outlines thickness={0.02} color={outlineColor} />
           </mesh>
           {/* Pawn Collar */}
           <mesh position={[0, 0.33, 0]} castShadow>
@@ -117,6 +150,7 @@ const Piece3D: React.FC<Piece3DProps> = ({ type, color, isSelected, themeMode })
               emissive={emissiveColor}
               emissiveIntensity={emissiveIntensity}
             />
+            <Outlines thickness={0.02} color={outlineColor} />
           </mesh>
         </group>
       )}
@@ -133,6 +167,7 @@ const Piece3D: React.FC<Piece3DProps> = ({ type, color, isSelected, themeMode })
               emissive={emissiveColor}
               emissiveIntensity={emissiveIntensity}
             />
+            <Outlines thickness={0.02} color={outlineColor} />
           </mesh>
           {/* Turret Platform */}
           <mesh position={[0, 0.5, 0]} castShadow>
@@ -143,6 +178,7 @@ const Piece3D: React.FC<Piece3DProps> = ({ type, color, isSelected, themeMode })
               emissive={emissiveColor}
               emissiveIntensity={emissiveIntensity}
             />
+            <Outlines thickness={0.02} color={outlineColor} />
           </mesh>
           {/* 4 Crenellated Parapets */}
           <mesh position={[0.18, 0.58, 0]} castShadow>
@@ -196,6 +232,7 @@ const Piece3D: React.FC<Piece3DProps> = ({ type, color, isSelected, themeMode })
               emissive={emissiveColor}
               emissiveIntensity={emissiveIntensity}
             />
+            <Outlines thickness={0.02} color={outlineColor} />
           </mesh>
           {/* Sculpted Head & Brow */}
           <mesh position={[0, 0.48, 0.06]} rotation={[0.42, 0, 0]} castShadow>
@@ -206,6 +243,7 @@ const Piece3D: React.FC<Piece3DProps> = ({ type, color, isSelected, themeMode })
               emissive={emissiveColor}
               emissiveIntensity={emissiveIntensity}
             />
+            <Outlines thickness={0.02} color={outlineColor} />
           </mesh>
           {/* Snout / Muzzle */}
           <mesh position={[0, 0.38, 0.22]} rotation={[0.7, 0, 0]} castShadow>
@@ -261,6 +299,7 @@ const Piece3D: React.FC<Piece3DProps> = ({ type, color, isSelected, themeMode })
               emissive={emissiveColor}
               emissiveIntensity={emissiveIntensity}
             />
+            <Outlines thickness={0.02} color={outlineColor} />
           </mesh>
           {/* Collar Rim */}
           <mesh position={[0, 0.52, 0]} castShadow>
@@ -281,6 +320,7 @@ const Piece3D: React.FC<Piece3DProps> = ({ type, color, isSelected, themeMode })
               emissive={emissiveColor}
               emissiveIntensity={emissiveIntensity}
             />
+            <Outlines thickness={0.02} color={outlineColor} />
           </mesh>
           {/* Pointed Mitre Peak */}
           <mesh position={[0, 0.8, 0]} castShadow>
@@ -315,6 +355,7 @@ const Piece3D: React.FC<Piece3DProps> = ({ type, color, isSelected, themeMode })
               emissive={emissiveColor}
               emissiveIntensity={emissiveIntensity}
             />
+            <Outlines thickness={0.02} color={outlineColor} />
           </mesh>
           {/* Mid-waist Ring */}
           <mesh position={[0, 0.58, 0]} castShadow>
@@ -335,6 +376,7 @@ const Piece3D: React.FC<Piece3DProps> = ({ type, color, isSelected, themeMode })
               emissive={emissiveColor}
               emissiveIntensity={emissiveIntensity}
             />
+            <Outlines thickness={0.02} color={outlineColor} />
           </mesh>
           {/* Coronet Spheres */}
           {Array.from({ length: 6 }).map((_, i) => {
@@ -375,6 +417,7 @@ const Piece3D: React.FC<Piece3DProps> = ({ type, color, isSelected, themeMode })
               emissive={emissiveColor}
               emissiveIntensity={emissiveIntensity}
             />
+            <Outlines thickness={0.02} color={outlineColor} />
           </mesh>
           {/* Mid-waist Ring */}
           <mesh position={[0, 0.65, 0]} castShadow>
@@ -405,6 +448,7 @@ const Piece3D: React.FC<Piece3DProps> = ({ type, color, isSelected, themeMode })
               emissive={emissiveColor}
               emissiveIntensity={emissiveIntensity}
             />
+            <Outlines thickness={0.02} color={outlineColor} />
           </mesh>
           {/* Royal Cross - Vertical bar */}
           <mesh position={[0, 1.05, 0]} castShadow>
@@ -635,26 +679,26 @@ const Board3D: React.FC<Board3DProps> = ({
           }
 
           return (
-            <group key={`sq-${r}-${c}`} position={[posX, 0, posZ]}>
+            <group
+              key={`sq-${r}-${c}`}
+              position={[posX, 0, posZ]}
+              onClick={(e) => {
+                e.stopPropagation();
+                onSelectSquare([r, c]);
+              }}
+              onPointerOver={(e) => {
+                e.stopPropagation();
+                setHoveredPos([r, c]);
+                document.body.style.cursor = 'pointer';
+              }}
+              onPointerOut={(e) => {
+                e.stopPropagation();
+                setHoveredPos(null);
+                document.body.style.cursor = 'default';
+              }}
+            >
               {/* Tile Mesh */}
-              <mesh
-                receiveShadow
-                position={[0, 0, 0]}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onSelectSquare([r, c]);
-                }}
-                onPointerOver={(e) => {
-                  e.stopPropagation();
-                  setHoveredPos([r, c]);
-                  document.body.style.cursor = 'pointer';
-                }}
-                onPointerOut={(e) => {
-                  e.stopPropagation();
-                  setHoveredPos(null);
-                  document.body.style.cursor = 'default';
-                }}
-              >
+              <mesh receiveShadow position={[0, 0, 0]}>
                 <boxGeometry args={[0.98, 0.08, 0.98]} />
                 <meshStandardMaterial
                   color={tileColor}
@@ -667,13 +711,7 @@ const Board3D: React.FC<Board3DProps> = ({
 
               {/* Legal Move Indicator (Floating glowing disc) */}
               {legalTarget && (
-                <mesh
-                  position={[0, 0.06, 0]}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onSelectSquare([r, c]);
-                  }}
-                >
+                <mesh position={[0, 0.06, 0]}>
                   <cylinderGeometry
                     args={[piece ? 0.42 : 0.16, piece ? 0.42 : 0.16, 0.02, 24]}
                   />

@@ -14,24 +14,14 @@ interface Chess2DViewProps {
   onSelectSquare: (pos: Position) => void;
 }
 
-// Crisp stylized Unicode piece symbols with rich drop-shadows
-const PIECE_SYMBOLS: Record<PieceColor, Record<string, string>> = {
-  w: {
-    k: '♔',
-    q: '♕',
-    r: '♖',
-    b: '♗',
-    n: '♘',
-    p: '♙',
-  },
-  b: {
-    k: '♚',
-    q: '♛',
-    r: '♜',
-    b: '♝',
-    n: '♞',
-    p: '♟',
-  },
+// Crisp solid Unicode piece symbols with high-contrast outlines
+const PIECE_SYMBOLS: Record<string, string> = {
+  k: '♚',
+  q: '♛',
+  r: '♜',
+  b: '♝',
+  n: '♞',
+  p: '♟',
 };
 
 export const Chess2DView: React.FC<Chess2DViewProps> = ({
@@ -176,23 +166,26 @@ export const Chess2DView: React.FC<Chess2DViewProps> = ({
                 </Typography>
               )}
 
-              {/* Piece Glyph */}
+              {/* Piece Glyph with Black Outline on White Pieces & White Outline on Black Pieces */}
               {piece && (
                 <Typography
                   sx={{
-                    fontSize: { xs: '2rem', sm: '2.8rem', md: '3.2rem' },
+                    fontSize: { xs: '2.2rem', sm: '3rem', md: '3.4rem' },
                     lineHeight: 1,
+                    fontWeight: 900,
                     color: piece.color === 'w' ? '#FFFFFF' : '#0F172A',
+                    WebkitTextStroke: piece.color === 'w' ? '2.5px #000000' : '2.5px #FFFFFF',
+                    paintOrder: 'stroke fill',
                     filter:
                       piece.color === 'w'
-                        ? 'drop-shadow(0 2px 3px rgba(0, 0, 0, 0.6)) drop-shadow(0 0 1px #000000)'
-                        : 'drop-shadow(0 2px 3px rgba(255, 255, 255, 0.3)) drop-shadow(0 0 1px #FFFFFF)',
+                        ? 'drop-shadow(0 3px 6px rgba(0, 0, 0, 0.8)) drop-shadow(0 0 2px #000000)'
+                        : 'drop-shadow(0 3px 6px rgba(0, 0, 0, 0.9)) drop-shadow(0 0 3px rgba(255, 255, 255, 0.95))',
                     transform: isSelected ? 'scale(1.15) translateY(-4px)' : 'none',
                     transition: 'transform 0.15s cubic-bezier(0.34, 1.56, 0.64, 1)',
                     zIndex: 2,
                   }}
                 >
-                  {PIECE_SYMBOLS[piece.color][piece.type]}
+                  {PIECE_SYMBOLS[piece.type]}
                 </Typography>
               )}
 

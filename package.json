@@ -5,9 +5,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "concurrently \"tsx server/src/index.ts\" \"vite\"",
+    "dev:client": "vite",
     "dev:server": "tsx server/src/index.ts",
-    "dev:all": "concurrently \"npm run dev:server\" \"npm run dev\"",
+    "dev:all": "concurrently \"tsx server/src/index.ts\" \"vite\"",
     "build": "tsc && vite build",
     "test": "vitest run",
     "preview": "vite preview"

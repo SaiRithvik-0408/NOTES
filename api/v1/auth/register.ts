@@ -64,12 +64,14 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   // Attempt real email delivery if SMTP credentials configured
   const mailResult = await sendOtpEmail(normalizedEmail, code, name.trim());
 
+  const isProd = process.env.NODE_ENV === 'production';
+
   return res.status(200).json({
     success: true,
     message: mailResult.sent
       ? `A 6-digit verification code has been delivered to ${normalizedEmail}`
       : `Verification code generated for ${normalizedEmail}`,
-    devOtp: code,
+    ...(isProd ? {} : { devOtp: code }),
     verificationToken,
     emailSent: mailResult.sent,
     mailReason: mailResult.reason || mailResult.error,
