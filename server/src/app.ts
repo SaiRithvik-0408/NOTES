@@ -168,7 +168,7 @@ app.get('/api/v1/auth/check-username', async (req, res) => {
 });
 
 // Send or Resend OTP
-app.post('/api/v1/auth/send-otp', (req, res) => {
+app.post('/api/v1/auth/send-otp', async (req, res) => {
   const { email } = req.body;
   if (!email || !email.includes('@')) {
     return res.status(400).json({ success: false, message: 'Valid email is required' });
@@ -188,11 +188,26 @@ app.post('/api/v1/auth/send-otp', (req, res) => {
   const verificationToken = generateVerificationToken(normalizedEmail, code, existingOtp?.userData);
   console.log(`🔐 [Nexus Auth] OTP for ${normalizedEmail}: ${code}`);
 
+  // Dispatch real email via nodemailer if SMTP credentials configured
+  let mailResult: { sent: boolean; reason?: string; error?: string } = { sent: false, reason: '' };
+  try {
+    const { sendOtpEmail } = await import('../../api/_mailer');
+    mailResult = await sendOtpEmail(normalizedEmail, code, existingOtp?.userData?.name || 'there');
+  } catch (err: any) {
+    console.warn('[Nexus Auth] Could not send OTP email via SMTP:', err.message);
+  }
+
+  const isProd = process.env.NODE_ENV === 'production';
+
   res.json({
     success: true,
-    message: `Verification code sent to ${normalizedEmail}`,
-    devOtp: code, // Dev helper for instant testing
+    message: mailResult.sent
+      ? `Verification code delivered to ${normalizedEmail}`
+      : `Verification code generated for ${normalizedEmail}`,
+    // Disable devOtp in production for security:
+    ...(isProd ? {} : { devOtp: code }),
     verificationToken,
+    emailSent: mailResult.sent,
   });
 });
 
@@ -252,11 +267,26 @@ app.post('/api/v1/auth/register', async (req, res) => {
 
   console.log(`🔐 [Nexus Auth] New Registration OTP for ${normalizedEmail} (${normalizedUsername}): ${code}`);
 
+  // Dispatch real email via nodemailer if SMTP credentials configured
+  let mailResult: { sent: boolean; reason?: string; error?: string } = { sent: false, reason: '' };
+  try {
+    const { sendOtpEmail } = await import('../../api/_mailer');
+    mailResult = await sendOtpEmail(normalizedEmail, code, name.trim());
+  } catch (err: any) {
+    console.warn('[Nexus Auth] Could not send OTP email via SMTP:', err.message);
+  }
+
+  const isProd = process.env.NODE_ENV === 'production';
+
   res.json({
     success: true,
-    message: `Verification code sent to ${normalizedEmail}`,
-    devOtp: code,
+    message: mailResult.sent
+      ? `Verification code delivered to ${normalizedEmail}`
+      : `Verification code generated for ${normalizedEmail}`,
+    // Disable devOtp in production for security:
+    ...(isProd ? {} : { devOtp: code }),
     verificationToken,
+    emailSent: mailResult.sent,
   });
 });
 

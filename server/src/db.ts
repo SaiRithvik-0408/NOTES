@@ -108,6 +108,7 @@ class ServerDatabase {
 
       await this.ensurePostgresTable();
       await this.loadUsersFromPostgres();
+      console.log('✅ [serverDb] Connected to Neon PostgreSQL cloud database successfully.');
     } catch (err: any) {
       console.warn('[serverDb] Failed to connect to PostgreSQL (falling back to disk/in-memory):', err.message);
     }

@@ -9,6 +9,17 @@ import {
   CastlingRights,
 } from './chessTypes';
 
+export type {
+  Piece,
+  PieceColor,
+  PieceType,
+  Position,
+  Board,
+  Move,
+  GameState,
+  CastlingRights,
+};
+
 /**
  * Initializes a standard 8x8 chess starting position.
  */

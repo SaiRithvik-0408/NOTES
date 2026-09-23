@@ -45,12 +45,14 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
 
   const mailResult = await sendOtpEmail(normalizedEmail, code, name || 'there');
 
+  const isProd = process.env.NODE_ENV === 'production';
+
   return res.status(200).json({
     success: true,
     message: mailResult.sent
       ? `Verification code delivered to ${normalizedEmail}`
       : `New verification code generated for ${normalizedEmail}`,
-    devOtp: code,
+    ...(isProd ? {} : { devOtp: code }),
     verificationToken,
     emailSent: mailResult.sent,
     mailReason: mailResult.reason || mailResult.error,

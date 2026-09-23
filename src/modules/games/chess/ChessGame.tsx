@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   Box,
   Paper,
@@ -118,6 +118,7 @@ export const ChessGame: React.FC = () => {
   const [gameState, setGameState] = useState<GameState>(() => createInitialGameState());
   const [historyStack, setHistoryStack] = useState<GameState[]>([]);
   const [isAiThinking, setIsAiThinking] = useState(false);
+  const aiThinkingRef = useRef(false);
   const [activeHint, setActiveHint] = useState<Move | null>(null);
   const [hintExplanation, setHintExplanation] = useState<string | null>(null);
 
@@ -285,10 +286,61 @@ export const ChessGame: React.FC = () => {
     };
   }, [gameMode, gameState, triggerMoveSound]);
 
+  // Automated AI bot move trigger
+  useEffect(() => {
+    if (gameMode !== 'ai') {
+      aiThinkingRef.current = false;
+      setIsAiThinking(false);
+      return;
+    }
+    if (gameState.isCheckmate || gameState.isStalemate) {
+      aiThinkingRef.current = false;
+      setIsAiThinking(false);
+      return;
+    }
+
+    // Check if it is the AI bot's turn
+    const isBotTurn = gameState.turn !== myRole;
+    if (!isBotTurn) {
+      aiThinkingRef.current = false;
+      setIsAiThinking(false);
+      return;
+    }
+
+    if (aiThinkingRef.current) return;
+    aiThinkingRef.current = true;
+    setIsAiThinking(true);
+
+    const thinkDelay = difficulty === 'hard' ? 500 : difficulty === 'medium' ? 350 : 250;
+    const timer = setTimeout(() => {
+      try {
+        const best = getBestMove(gameState, difficulty);
+        if (best) {
+          setHistoryStack((prev) => [...prev, gameState]);
+          const nextState = applyMove(gameState, best);
+          setGameState(nextState);
+          setActiveHint(null);
+          setHintExplanation(null);
+          triggerMoveSound(best, nextState.isCheck, nextState.isCheckmate);
+        }
+      } catch (err) {
+        console.error('Chess AI move calculation failed:', err);
+      } finally {
+        aiThinkingRef.current = false;
+        setIsAiThinking(false);
+      }
+    }, thinkDelay);
+
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [gameMode, gameState, myRole, difficulty, triggerMoveSound]);
+
   // Handle Square Selection and Piece Movement
   const handleSelectSquare = useCallback(
     (pos: Position) => {
       if (isAiThinking || gameState.isCheckmate || gameState.isStalemate) return;
+      if (gameMode === 'ai' && gameState.turn !== myRole) return;
       if (gameMode === 'online') {
         if (myRole === 'spectator') {
           setToastMessage('👁️ You are in Spectator Mode. Request a seat to play!');
@@ -342,6 +394,9 @@ export const ChessGame: React.FC = () => {
       if (clickedPiece && clickedPiece.color === gameState.turn) {
         if (gameMode === 'online' && myRole !== clickedPiece.color) {
           return; // Cannot select opponent's pieces
+        }
+        if (gameMode === 'ai' && myRole !== clickedPiece.color) {
+          return; // Cannot select AI bot's pieces
         }
 
         const moves = getLegalMoves(
@@ -439,7 +494,7 @@ export const ChessGame: React.FC = () => {
   const handleUndo = () => {
     if (historyStack.length === 0 || isAiThinking) return;
     const targetSteps = gameMode === 'ai' ? 2 : 1;
-    if (historyStack.length < targetSteps) {
+    if (historyStack.length <= targetSteps) {
       const initial = historyStack[0];
       setGameState(initial);
       setHistoryStack([]);
@@ -450,6 +505,8 @@ export const ChessGame: React.FC = () => {
     }
     setActiveHint(null);
     setHintExplanation(null);
+    aiThinkingRef.current = false;
+    setIsAiThinking(false);
   };
 
   // Restart / New Game
@@ -459,6 +516,8 @@ export const ChessGame: React.FC = () => {
     setHistoryStack([]);
     setActiveHint(null);
     setHintExplanation(null);
+    aiThinkingRef.current = false;
+    setIsAiThinking(false);
     if (gameMode === 'online') {
       chessMultiplayer.sendReset();
     }
@@ -644,7 +703,7 @@ export const ChessGame: React.FC = () => {
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
               <Typography variant="body2" sx={{ fontWeight: 700, color: 'text.secondary' }}>
                 {gameMode === 'ai'
-                  ? '🤖 Bot (Black)'
+                  ? myRole === 'w' ? '🤖 Bot (Black)' : '🤖 Bot (White)'
                   : gameMode === 'online'
                   ? `👤 ${roomPresence.blackPlayer?.name || 'Waiting for Black...'}`
                   : 'Black'}
@@ -782,6 +841,8 @@ export const ChessGame: React.FC = () => {
             <Typography variant="body2" sx={{ fontWeight: 700, color: 'text.secondary' }}>
               {gameMode === 'online'
                 ? `👤 ${roomPresence.whitePlayer?.name || 'Waiting for White...'}`
+                : gameMode === 'ai'
+                ? myRole === 'w' ? '👤 You (White)' : '👤 You (Black)'
                 : '👤 You (White)'}
             </Typography>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
@@ -831,6 +892,8 @@ export const ChessGame: React.FC = () => {
                 ? `🏆 Checkmate! ${gameState.winner === 'w' ? 'White' : 'Black'} Wins!`
                 : gameState.isStalemate
                 ? '🤝 Draw by Stalemate'
+                : isAiThinking
+                ? '🤖 Bot is thinking of a move...'
                 : gameState.isCheck
                 ? `⚠️ Check! (${gameState.turn === 'w' ? 'White' : 'Black'} to move)`
                 : `${gameState.turn === 'w' ? 'White' : 'Black'} to move`}
@@ -980,12 +1043,44 @@ export const ChessGame: React.FC = () => {
               </Box>
             )}
 
-            {/* AI Difficulty Selector */}
+            {/* AI Side & Difficulty Selectors */}
             {gameMode === 'ai' && (
-              <Box>
-                <Typography variant="caption" sx={{ color: 'text.secondary', mb: 0.5, display: 'block' }}>
-                  Bot Difficulty:
-                </Typography>
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+                <Box>
+                  <Typography variant="caption" sx={{ color: 'text.secondary', mb: 0.5, display: 'block', fontWeight: 700 }}>
+                    Your Side:
+                  </Typography>
+                  <ToggleButtonGroup
+                    value={myRole}
+                    exclusive
+                    onChange={(_, role: ChessPlayerRole | null) => {
+                      if (!role || role === 'spectator') return;
+                      setMyRole(role);
+                      setIsFlipped(role === 'b');
+                      const fresh = createInitialGameState();
+                      setGameState(fresh);
+                      setHistoryStack([]);
+                      setActiveHint(null);
+                      setHintExplanation(null);
+                      aiThinkingRef.current = false;
+                      setIsAiThinking(false);
+                    }}
+                    fullWidth
+                    size="small"
+                  >
+                    <ToggleButton value="w" sx={{ textTransform: 'none', fontSize: '0.75rem', py: 0.4, fontWeight: 700 }}>
+                      ⚪ White (First)
+                    </ToggleButton>
+                    <ToggleButton value="b" sx={{ textTransform: 'none', fontSize: '0.75rem', py: 0.4, fontWeight: 700 }}>
+                      ⚫ Black
+                    </ToggleButton>
+                  </ToggleButtonGroup>
+                </Box>
+
+                <Box>
+                  <Typography variant="caption" sx={{ color: 'text.secondary', mb: 0.5, display: 'block', fontWeight: 700 }}>
+                    Bot Difficulty:
+                  </Typography>
                 <ToggleButtonGroup
                   value={difficulty}
                   exclusive
@@ -1004,7 +1099,8 @@ export const ChessGame: React.FC = () => {
                   </ToggleButton>
                 </ToggleButtonGroup>
               </Box>
-            )}
+            </Box>
+          )}
 
             {/* Action Buttons: Undo, Hint, Flip, Sound */}
             <Stack direction="row" spacing={1} sx={{ mt: 0.5 }}>

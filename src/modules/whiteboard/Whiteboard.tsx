@@ -42,8 +42,37 @@ export const Whiteboard: React.FC<{ noteId?: string }> = ({ noteId }) => {
   const [tool, setTool] = useState<'brush' | 'rectangle' | 'circle' | 'line'>('brush');
   const [color, setColor] = useState('#6366F1');
   const [lineWidth, setLineWidth] = useState(3);
-  const [shapes, setShapes] = useState<Shape[]>([]);
+
+  const storageKey = `nexus_whiteboard_${noteId || 'global'}`;
+
+  const [shapes, setShapes] = useState<Shape[]>(() => {
+    try {
+      const saved = localStorage.getItem(`nexus_whiteboard_${noteId || 'global'}`);
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
   const [renderTick, setRenderTick] = useState(0);
+
+  // Reload shapes when active note changes
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(storageKey);
+      setShapes(saved ? JSON.parse(saved) : []);
+    } catch {
+      setShapes([]);
+    }
+  }, [storageKey]);
+
+  // Persist shapes to localStorage on change
+  useEffect(() => {
+    try {
+      localStorage.setItem(storageKey, JSON.stringify(shapes));
+    } catch (err) {
+      console.warn('Could not persist whiteboard shapes:', err);
+    }
+  }, [shapes, storageKey]);
 
   // Use refs for drawing state so native event handlers always see current values
   const isDrawingRef = useRef(false);
@@ -282,8 +311,20 @@ export const Whiteboard: React.FC<{ noteId?: string }> = ({ noteId }) => {
     setShapes((prev) => prev.slice(0, -1));
   };
 
+  const handleExportImage = () => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const link = document.createElement('a');
+    link.download = `nexus-whiteboard-${noteId || 'drawing'}-${Date.now()}.png`;
+    link.href = canvas.toDataURL('image/png');
+    link.click();
+  };
+
   const handleClear = () => {
-    setShapes([]);
+    if (shapes.length === 0) return;
+    if (window.confirm('Clear all drawings from this canvas?')) {
+      setShapes([]);
+    }
   };
 
   return (
@@ -373,6 +414,11 @@ export const Whiteboard: React.FC<{ noteId?: string }> = ({ noteId }) => {
         <Tooltip title="Undo">
           <IconButton size="small" onClick={handleUndo}>
             <Undo fontSize="small" />
+          </IconButton>
+        </Tooltip>
+        <Tooltip title="Export Canvas as PNG">
+          <IconButton size="small" color="primary" onClick={handleExportImage}>
+            <Download fontSize="small" />
           </IconButton>
         </Tooltip>
         <Tooltip title="Clear Canvas">

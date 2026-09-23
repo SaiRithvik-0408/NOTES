@@ -72,20 +72,33 @@ if (DB_URL) {
     pool = new Pool({
       connectionString: DB_URL,
       ssl: DB_URL.includes('localhost') ? false : { rejectUnauthorized: false },
-      max: 10,
-      connectionTimeoutMillis: 15000,
-      idleTimeoutMillis: 30000,
+      max: process.env.VERCEL ? 2 : 10,
+      connectionTimeoutMillis: 5000,
+      idleTimeoutMillis: 10000,
+    });
+
+    // Prevent unhandled error crashes in Serverless Lambdas on connection reset
+    pool.on('error', (err) => {
+      console.warn('PostgreSQL pool background warning (safely caught):', err?.message || err);
     });
   } catch (e) {
     console.error('Failed to initialize PostgreSQL pool:', e);
   }
 }
 
+export async function safeQuery(sql: string, params: any[] = [], timeoutMs = 4000): Promise<any> {
+  if (!pool) return null;
+  const timeoutPromise = new Promise((_, reject) =>
+    setTimeout(() => reject(new Error('PostgreSQL query timed out')), timeoutMs)
+  );
+  return Promise.race([pool.query(sql, params), timeoutPromise]);
+}
+
 async function ensurePostgresTable() {
   if (!pool || dbInitialized || isEnsuringTable) return;
   isEnsuringTable = true;
   try {
-    await pool.query(`
+    await safeQuery(`
       CREATE TABLE IF NOT EXISTS nexus_users (
         id VARCHAR(255) PRIMARY KEY,
         username VARCHAR(255) UNIQUE NOT NULL,
@@ -135,10 +148,10 @@ async function ensurePostgresTable() {
         note_data JSONB,
         created_at TIMESTAMPTZ DEFAULT NOW()
       );
-    `);
+    `, [], 4500);
     dbInitialized = true;
   } catch (err: any) {
-    console.error('Error ensuring PostgreSQL tables:', err.message);
+    console.warn('Could not ensure PostgreSQL tables (fallback to memory/cache):', err.message);
   } finally {
     isEnsuringTable = false;
   }
@@ -309,7 +322,7 @@ export async function saveMutation(op: any): Promise<void> {
   if (pool) {
     try {
       await ensurePostgresTable();
-      await pool.query(
+      await safeQuery(
         `INSERT INTO nexus_mutations (operation_id, client_id, workspace_id, entity_type, entity_id, operation_type, payload, base_version, applied_at)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
          ON CONFLICT (operation_id) DO NOTHING`,
@@ -322,10 +335,11 @@ export async function saveMutation(op: any): Promise<void> {
           op.operationType,
           JSON.stringify(op.payload || {}),
           op.baseVersion || 0,
-        ]
+        ],
+        3500
       );
     } catch (err: any) {
-      console.error('Error saving mutation to PostgreSQL:', err.message);
+      console.warn('Error saving mutation to PostgreSQL (cached in memory):', err.message);
     }
   }
 }
@@ -344,28 +358,30 @@ export async function getMutationsSince(since?: string): Promise<any[]> {
         params.push(since);
       }
       query += ` ORDER BY applied_at ASC`;
-      const res = await pool.query(query, params);
-      return res.rows.map((row) => ({
-        operationId: row.operation_id,
-        clientId: row.client_id,
-        workspaceId: row.workspace_id,
-        entityType: row.entity_type,
-        entityId: row.entity_id,
-        operationType: row.operation_type,
-        payload: typeof row.payload === 'string' ? JSON.parse(row.payload) : row.payload,
-        version: (row.base_version || 0) + 1,
-        timestamp: row.applied_at.toISOString ? row.applied_at.toISOString() : row.applied_at,
-        sourceClientId: row.client_id,
-      }));
+      const res = await safeQuery(query, params, 3500);
+      if (res && Array.isArray(res.rows)) {
+        return res.rows.map((row: any) => ({
+          operationId: row.operation_id,
+          clientId: row.client_id,
+          workspaceId: row.workspace_id,
+          entityType: row.entity_type,
+          entityId: row.entity_id,
+          operationType: row.operation_type,
+          payload: typeof row.payload === 'string' ? JSON.parse(row.payload) : row.payload,
+          version: (row.base_version || 0) + 1,
+          timestamp: row.applied_at?.toISOString ? row.applied_at.toISOString() : (row.applied_at || new Date().toISOString()),
+          sourceClientId: row.client_id,
+        }));
+      }
     } catch (err: any) {
-      console.error('Error fetching mutations from PostgreSQL:', err.message);
+      console.warn('Error fetching mutations from PostgreSQL (falling back to memory):', err.message);
     }
   }
 
   // Fallback to in-memory operations cache
   const ops = Array.from(operations.values());
   return ops
-    .filter((op) => !since || op.appliedAt > since)
+    .filter((op) => !since || (op.appliedAt && op.appliedAt > since))
     .map((op) => ({
       operationId: op.operationId,
       entityType: op.entityType,
@@ -373,7 +389,7 @@ export async function getMutationsSince(since?: string): Promise<any[]> {
       operationType: op.operationType,
       payload: op.payload,
       version: (op.baseVersion || 0) + 1,
-      timestamp: op.appliedAt,
+      timestamp: op.appliedAt || new Date().toISOString(),
       sourceClientId: op.clientId,
     }));
 }
@@ -388,7 +404,7 @@ export async function saveNote(note: any): Promise<void> {
   if (pool) {
     try {
       await ensurePostgresTable();
-      await pool.query(
+      await safeQuery(
         `INSERT INTO nexus_notes (id, workspace_id, folder_id, title, content, plain_text, icon, tags, is_pinned, is_archived, is_trash, version, updated_at)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW())
          ON CONFLICT (id) DO UPDATE SET
@@ -415,10 +431,11 @@ export async function saveNote(note: any): Promise<void> {
           Boolean(note.isArchived),
           Boolean(note.isTrash),
           note.version || 1,
-        ]
+        ],
+        3500
       );
     } catch (err: any) {
-      console.error('Error saving note to PostgreSQL:', err.message);
+      console.warn('Error saving note to PostgreSQL (saved to memory):', err.message);
     }
   }
 }
@@ -433,9 +450,9 @@ export async function deleteNote(noteId: string): Promise<void> {
   if (pool) {
     try {
       await ensurePostgresTable();
-      await pool.query(`DELETE FROM nexus_notes WHERE id = $1`, [noteId]);
+      await safeQuery(`DELETE FROM nexus_notes WHERE id = $1`, [noteId], 3500);
     } catch (err: any) {
-      console.error('Error deleting note from PostgreSQL:', err.message);
+      console.warn('Error deleting note from PostgreSQL:', err.message);
     }
   }
 }
@@ -447,25 +464,27 @@ export async function getNotes(): Promise<any[]> {
   if (pool) {
     try {
       await ensurePostgresTable();
-      const res = await pool.query(`SELECT * FROM nexus_notes WHERE is_trash = FALSE ORDER BY updated_at DESC`);
-      return res.rows.map((row) => ({
-        id: row.id,
-        workspaceId: row.workspace_id,
-        folderId: row.folder_id,
-        title: row.title,
-        content: row.content,
-        plainText: row.plain_text,
-        icon: row.icon,
-        tags: typeof row.tags === 'string' ? JSON.parse(row.tags) : row.tags,
-        isPinned: row.is_pinned,
-        isArchived: row.is_archived,
-        isTrash: row.is_trash,
-        version: row.version,
-        updatedAt: row.updated_at.toISOString ? row.updated_at.toISOString() : row.updated_at,
-        createdAt: row.created_at.toISOString ? row.created_at.toISOString() : row.created_at,
-      }));
+      const res = await safeQuery(`SELECT * FROM nexus_notes WHERE is_trash = FALSE ORDER BY updated_at DESC`, [], 3500);
+      if (res && Array.isArray(res.rows)) {
+        return res.rows.map((row: any) => ({
+          id: row.id,
+          workspaceId: row.workspace_id,
+          folderId: row.folder_id,
+          title: row.title,
+          content: row.content,
+          plainText: row.plain_text,
+          icon: row.icon,
+          tags: typeof row.tags === 'string' ? JSON.parse(row.tags) : row.tags,
+          isPinned: row.is_pinned,
+          isArchived: row.is_archived,
+          isTrash: row.is_trash,
+          version: row.version,
+          updatedAt: row.updated_at?.toISOString ? row.updated_at.toISOString() : (row.updated_at || new Date().toISOString()),
+          createdAt: row.created_at?.toISOString ? row.created_at.toISOString() : (row.created_at || new Date().toISOString()),
+        }));
+      }
     } catch (err: any) {
-      console.error('Error fetching notes from PostgreSQL:', err.message);
+      console.warn('Error fetching notes from PostgreSQL (fallback to memory):', err.message);
     }
   }
 
@@ -481,8 +500,8 @@ export async function getNoteById(noteId: string): Promise<any | null> {
   if (pool) {
     try {
       await ensurePostgresTable();
-      const res = await pool.query(`SELECT * FROM nexus_notes WHERE id = $1 LIMIT 1`, [noteId]);
-      if (res.rows.length > 0) {
+      const res = await safeQuery(`SELECT * FROM nexus_notes WHERE id = $1 LIMIT 1`, [noteId], 3500);
+      if (res && res.rows && res.rows.length > 0) {
         const row = res.rows[0];
         return {
           id: row.id,
@@ -497,12 +516,12 @@ export async function getNoteById(noteId: string): Promise<any | null> {
           isArchived: row.is_archived,
           isTrash: row.is_trash,
           version: row.version,
-          updatedAt: row.updated_at?.toISOString ? row.updated_at.toISOString() : row.updated_at,
-          createdAt: row.created_at?.toISOString ? row.created_at.toISOString() : row.created_at,
+          updatedAt: row.updated_at?.toISOString ? row.updated_at.toISOString() : (row.updated_at || new Date().toISOString()),
+          createdAt: row.created_at?.toISOString ? row.created_at.toISOString() : (row.created_at || new Date().toISOString()),
         };
       }
     } catch (err: any) {
-      console.error('Error fetching note by id from PostgreSQL:', err.message);
+      console.warn('Error fetching note by id from PostgreSQL:', err.message);
     }
   }
 
@@ -524,7 +543,7 @@ export async function saveShareRecord(record: any): Promise<void> {
   if (pool) {
     try {
       await ensurePostgresTable();
-      await pool.query(
+      await safeQuery(
         `INSERT INTO nexus_shares (token, note_id, workspace_id, access_level, note_data, created_at)
          VALUES ($1, $2, $3, $4, $5, NOW())
          ON CONFLICT (token) DO UPDATE SET
@@ -538,10 +557,11 @@ export async function saveShareRecord(record: any): Promise<void> {
           record.workspaceId || 'ws-default-nexus',
           record.accessLevel || 'view',
           JSON.stringify(record.noteData || null),
-        ]
+        ],
+        3500
       );
     } catch (err: any) {
-      console.error('Error saving share record to PostgreSQL:', err.message);
+      console.warn('Error saving share record to PostgreSQL:', err.message);
     }
   }
 }
@@ -555,11 +575,12 @@ export async function getShareRecord(token: string): Promise<any | null> {
   if (pool) {
     try {
       await ensurePostgresTable();
-      const res = await pool.query(
+      const res = await safeQuery(
         `SELECT * FROM nexus_shares WHERE token = $1 OR note_id = $1 LIMIT 1`,
-        [token]
+        [token],
+        3500
       );
-      if (res.rows.length > 0) {
+      if (res && res.rows && res.rows.length > 0) {
         const row = res.rows[0];
         return {
           token: row.token,
@@ -567,15 +588,16 @@ export async function getShareRecord(token: string): Promise<any | null> {
           workspaceId: row.workspace_id,
           accessLevel: row.access_level,
           noteData: typeof row.note_data === 'string' ? JSON.parse(row.note_data) : row.note_data,
-          createdAt: row.created_at?.toISOString ? row.created_at.toISOString() : row.created_at,
+          createdAt: row.created_at?.toISOString ? row.created_at.toISOString() : (row.created_at || new Date().toISOString()),
         };
       }
     } catch (err: any) {
-      console.error('Error fetching share record from PostgreSQL:', err.message);
+      console.warn('Error fetching share record from PostgreSQL:', err.message);
     }
   }
 
   return shareStore.get(token) || null;
 }
+
 
 
