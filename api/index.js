@@ -661,8 +661,8 @@ app.post("/api/v1/auth/send-otp", async (req, res) => {
   res.json({
     success: true,
     message: mailResult.sent ? `Verification code delivered to ${normalizedEmail}` : `Verification code generated for ${normalizedEmail}`,
-    // Disable devOtp in production for security:
-    ...isProd ? {} : { devOtp: code },
+    // Only suppress devOtp in production if email was actually dispatched via SMTP:
+    ...isProd && mailResult.sent ? {} : { devOtp: code },
     verificationToken,
     emailSent: mailResult.sent
   });
@@ -718,8 +718,8 @@ app.post("/api/v1/auth/register", async (req, res) => {
   res.json({
     success: true,
     message: mailResult.sent ? `Verification code delivered to ${normalizedEmail}` : `Verification code generated for ${normalizedEmail}`,
-    // Disable devOtp in production for security:
-    ...isProd ? {} : { devOtp: code },
+    // Only suppress devOtp in production if email was actually dispatched via SMTP:
+    ...isProd && mailResult.sent ? {} : { devOtp: code },
     verificationToken,
     emailSent: mailResult.sent
   });
